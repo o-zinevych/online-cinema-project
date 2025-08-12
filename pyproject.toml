@@ -1,7 +1,7 @@
 [project]
 name = "online-cinema-project"
 version = "0.1.0"
-description = ""
+description = "A FastAPI project that allows users to select, watch, and purchase access to movies as well as manage their accounts."
 authors = [
     {name = "Olha",email = "olgazinevych@gmail.com"}
 ]
