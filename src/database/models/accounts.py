@@ -1,10 +1,12 @@
 import enum
+from datetime import datetime
 from typing import List
 
-from sqlalchemy import Enum
+from sqlalchemy import Enum, Integer, String, Boolean, DateTime, func, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.models.base import Base
+from security.passwords import hash_password
 
 
 class UserGroupEnum(str, enum.Enum):
@@ -21,7 +23,7 @@ class GenderEnum(str, enum.Enum):
 class UserGroup(Base):
     __tablename__ = "user_groups"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[UserGroupEnum] = mapped_column(
         Enum(UserGroupEnum), nullable=False, unique=True
     )
@@ -30,3 +32,56 @@ class UserGroup(Base):
 
     def __repr__(self) -> str:
         return f"UserGroup(id={self.id}, name={self.name})"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    _hashed_password: Mapped[str] = mapped_column(
+        "hashed_password", String(255), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    group_id: Mapped[int] = mapped_column(
+        ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False
+    )
+    group: Mapped["UserGroup"] = relationship("UserGroup", back_populates="users")
+
+    profile: Mapped["UserProfile"] = relationship(
+        "UserProfile", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    activation_token: Mapped["ActivationToken"] = relationship(
+        "ActivationToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    password_reset_token: Mapped["PasswordResetToken"] = relationship(
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    refresh_token: Mapped["RefreshToken"] = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    @property
+    def password(self) -> None:
+        raise AttributeError("Password is write-only.")
+
+    @password.setter
+    def password(self, raw_password: str) -> None:
+        """Set the user's password after hashing it."""
+        self._hashed_password = hash_password(raw_password)
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
