@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Date,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -132,3 +133,13 @@ class TokenBase(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc) + timedelta(days=1),
     )
+
+
+class ActivationToken(TokenBase):
+    __tablename__ = "activation_tokens"
+    __table_args__ = (UniqueConstraint("user_id"),)
+
+    user: Mapped["User"] = relationship("User", back_populates="activation_token")
+
+    def __repr__(self) -> str:
+        return f"ActivationToken(user_id={self.user_id}, token={self.token}, expires_at={self.expires_at})"
