@@ -153,3 +153,12 @@ class PasswordResetToken(TokenBase):
 
     def __repr__(self) -> str:
         return f"PasswordResetToken(user_id={self.user_id}, token={self.token}, expires_at={self.expires_at})"
+
+
+class RefreshToken(TokenBase):
+    __tablename__ = "refresh_tokens"
+
+    user: Mapped["User"] = relationship("User", back_populates="refresh_token")
+
+    def __repr__(self) -> str:
+        return f"RefreshToken(user_id={self.user_id}, token={self.token}), expires_at={self.expires_at}"
