@@ -143,3 +143,13 @@ class ActivationToken(TokenBase):
 
     def __repr__(self) -> str:
         return f"ActivationToken(user_id={self.user_id}, token={self.token}, expires_at={self.expires_at})"
+
+
+class PasswordResetToken(TokenBase):
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (UniqueConstraint("user_id"),)
+
+    user: Mapped["User"] = relationship("User", back_populates="password_reset_token")
+
+    def __repr__(self) -> str:
+        return f"PasswordResetToken(user_id={self.user_id}, token={self.token}, expires_at={self.expires_at})"
