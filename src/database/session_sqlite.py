@@ -1,5 +1,6 @@
 from typing import AsyncGenerator
 
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -14,6 +15,11 @@ sqlite_engine = create_async_engine(
 # noinspection PyTypeChecker
 AsyncSQLiteSessionLocal = sessionmaker(
     bind=sqlite_engine, class_=AsyncSession, expire_on_commit=False
+)
+
+sync_database_url = SQLITE_DATABASE_URL.replace("+aiosqlite", "")
+sync_sqlite_engine = create_engine(
+    sync_database_url, echo=False, connect_args={"check_same_thread": False}
 )
 
 
