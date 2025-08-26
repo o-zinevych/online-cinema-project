@@ -14,9 +14,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from database.models.base import Base
+from database.validators.accounts import validate_password_strength, validate_email
 from security.utils import hash_password, generate_secure_token
 
 
@@ -91,8 +92,14 @@ class User(Base):
 
     @password.setter
     def password(self, raw_password: str) -> None:
-        """Set the user's password after hashing it."""
+        """Set the user's password after checking its strength and hashing it."""
+
+        validate_password_strength(raw_password)
         self._hashed_password = hash_password(raw_password)
+
+    @validates("email")
+    def validate_email(self, key, email: str) -> str | None:
+        return validate_email(email.lower())
 
     def __repr__(self) -> str:
         return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
