@@ -86,6 +86,16 @@ class User(Base):
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
 
+    @classmethod
+    def create(cls, email: str, raw_password: str, group_id: int) -> "User":
+        """
+        Method to simplify the creation of a new User instance.
+        It hashes the raw password and sets the necessary attributes.
+        """
+        user = cls(email=email, group_id=group_id)
+        user.password = raw_password
+        return user
+
     @property
     def password(self) -> None:
         raise AttributeError("Password is write-only.")
