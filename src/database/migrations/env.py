@@ -2,8 +2,9 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from database.models import accounts
 from database.models.base import Base
-from database.session_sqlite import sync_sqlite_engine
+from database.session_sqlite import sync_sqlite_engine, sync_database_url
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -35,18 +36,17 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    connectable = sync_sqlite_engine
+    url = sync_database_url
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        compare_type=True,
+        compare_server_default=True,
+    )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True,
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 def run_migrations_online() -> None:
