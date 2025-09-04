@@ -70,3 +70,26 @@ async def register_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Default user group not found.",
         )
+
+    try:
+        new_user = User.create(
+            email=str(user_data.email),
+            raw_password=user_data.password,
+            group_id=default_user_group.id,
+        )
+        db.add(new_user)
+        await db.flush()
+
+        activation_token = ActivationToken(user_id=new_user.id)
+        db.add(activation_token)
+
+        await db.commit()
+        await db.refresh(new_user)
+    except SQLAlchemyError as error:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during user registration.",
+        ) from error
+    else:
+        return UserRegistrationResponseSchema.model_validate(new_user)
