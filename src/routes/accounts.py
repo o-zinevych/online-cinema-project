@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from database import get_db
-from database.models.accounts import User, UserGroup, UserGroupEnum
+from database.models.accounts import User, UserGroup, UserGroupEnum, ActivationToken
 from schemas.accounts import (
     UserRegistrationResponseSchema,
     UserRegistrationRequestSchema,
@@ -29,10 +30,21 @@ router = APIRouter()
             },
         },
         500: {
-            "description": "Internal Server Error - Default user group wasn't found.",
+            "description": "Internal Server Error - An error occurred during user creation.",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Default user group not found."}
+                    "examples": {
+                        "default_user_group_not_found": {
+                            "summary": "Default User Group Not Found",
+                            "value": {"detail": "Default user group not found."},
+                        },
+                        "db_error": {
+                            "summary": "User Creation Error",
+                            "value": {
+                                "detail": "An error occurred during user registration."
+                            },
+                        },
+                    }
                 }
             },
         },
@@ -41,7 +53,7 @@ router = APIRouter()
 async def register_user(
     user_data: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)
 ) -> UserRegistrationResponseSchema:
-    result = await db.execute(select(User.email == user_data.email))
+    result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise HTTPException(
@@ -49,7 +61,9 @@ async def register_user(
             detail="User with this email is already registered.",
         )
 
-    result = await db.execute(select(UserGroup.name == UserGroupEnum.USER))
+    result = await db.execute(
+        select(UserGroup).where(UserGroup.name == UserGroupEnum.USER)
+    )
     default_user_group = result.scalar_one_or_none()
     if not default_user_group:
         raise HTTPException(
