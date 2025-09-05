@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -53,6 +53,25 @@ router = APIRouter()
 async def register_user(
     user_data: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)
 ) -> UserRegistrationResponseSchema:
+    """
+    User registration endpoint.
+
+    Registers a new user via email, hashes their password and assigns them the default user group.
+    If a user with the same email is already registered, an HTTP 409 error is raised.
+    If any unexpected errors happen during the creation process, an HTTP 500 error is raised.
+
+    Args:
+    user_data (UserRegistrationRequestSchema): User registration details including their email and password.
+    db (AsyncSession): Asynchronous database session.
+
+    Returns:
+    UserRegistrationResponseSchema: The new user's details.
+
+    Raises:
+        HTTPException:
+            - 409 Conflict if a user with the same email exists.
+            - 500 Internal Server Error if an error occurred during user creation.
+    """
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
