@@ -1,15 +1,20 @@
 from datetime import datetime, timezone
-from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from starlette import status
 
+from config.dependencies import get_account_email_sender, get_settings
 from database import get_db
-from database.models.accounts import User, UserGroup, UserGroupEnum, ActivationToken
+from database.models.accounts import (
+    User,
+    UserGroup,
+    UserGroupEnum,
+    ActivationToken,
+)
 from schemas.accounts import (
     UserRegistrationResponseSchema,
     UserRegistrationRequestSchema,
@@ -18,7 +23,9 @@ from schemas.accounts import (
 
 router = APIRouter()
 
+settings = get_settings()
 base_url = "http://127.0.0.1:8000/api/v1/accounts"
+email_sender = get_account_email_sender(settings)
 
 
 @router.post(
@@ -58,17 +65,21 @@ base_url = "http://127.0.0.1:8000/api/v1/accounts"
     },
 )
 async def register_user(
-    user_data: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)
+    user_data: UserRegistrationRequestSchema,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> UserRegistrationResponseSchema:
     """
     User registration endpoint.
 
     Registers a new user via email, hashes their password and assigns them the default user group.
+    Also sends an email notification with the account activation link.
     If a user with the same email is already registered, an HTTP 409 error is raised.
     If any unexpected errors happen during the creation process, an HTTP 500 error is raised.
 
     Args:
         user_data (UserRegistrationRequestSchema): User registration details including their email and password.
+        background_tasks (BackgroundTasks): Background tasks to schedule the email to be sent when registered.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -108,6 +119,12 @@ async def register_user(
 
         activation_token = ActivationToken(user_id=new_user.id)
         db.add(activation_token)
+        await db.flush()
+
+        activation_link = f"{base_url}/activate/?token={activation_token.token}"
+        background_tasks.add_task(
+            email_sender.send_activation_email, new_user.email, activation_link
+        )
 
         await db.commit()
         await db.refresh(new_user)
