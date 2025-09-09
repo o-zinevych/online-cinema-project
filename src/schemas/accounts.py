@@ -29,5 +29,9 @@ class UserRegistrationResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserActivationRequestSchema(BaseModel):
+    email: EmailStr
+
+
 class MessageResponseSchema(BaseModel):
     message: str
