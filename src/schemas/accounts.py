@@ -33,5 +33,10 @@ class UserActivationRequestSchema(BaseModel):
     email: EmailStr
 
 
+class PasswordResetRequestSchema(BaseModel):
+    email: EmailStr
+    password_forgotten: bool
+
+
 class MessageResponseSchema(BaseModel):
     message: str
