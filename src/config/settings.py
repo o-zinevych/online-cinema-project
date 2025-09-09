@@ -16,3 +16,4 @@ class BaseAppSettings(BaseSettings):
 
     EMAIL_TEMPLATES_PATH: str = str(BASE_DIR / "notifications" / "templates")
     ACTIVATION_EMAIL_TEMPLATE_NAME: str = "activation_request.html"
+    ACTIVATION_COMPLETE_EMAIL_TEMPLATE_NAME: str = "activation_complete.html"

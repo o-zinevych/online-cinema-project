@@ -38,4 +38,5 @@ def get_account_email_sender(
         use_tls=settings.EMAIL_USE_TLS,
         template_dir=settings.EMAIL_TEMPLATES_PATH,
         activation_email_template_name=settings.ACTIVATION_EMAIL_TEMPLATE_NAME,
+        activation_complete_email_template_name=settings.ACTIVATION_COMPLETE_EMAIL_TEMPLATE_NAME,
     )
