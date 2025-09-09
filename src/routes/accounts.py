@@ -228,3 +228,108 @@ async def activate_account(
     await db.delete(token_record)
     await db.commit()
     return MessageResponseSchema(message="User account activated successfully.")
+
+
+@router.post(
+    "/activate/request/",
+    response_model=MessageResponseSchema,
+    summary="Account Activation Request",
+    description="Request a new account activation link to be sent to a given email.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Account already active.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This user account is already active."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - User with the given email was not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "User with the given email not found."}
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during token creation.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred during activation link generation."
+                    }
+                }
+            },
+        },
+    },
+)
+async def request_account_activation_link(
+    user_data: UserActivationRequestSchema,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    New account activation link endpoint.
+
+    Sends a fresh activation link to the given email if that account is not active yet.
+    In the process, deletes any existing activation tokens for the given user.
+
+    Args:
+        user_data (UserActivationRequestSchema): The user's email.
+        background_tasks (BackgroundTasks): Background tasks to schedule the activation link email to be sent.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A response message confirming successful activation.
+
+    Raises:
+        HTTPException:
+            - 400 Bad Request if the user account is already active.
+            - 404 Not Found if the user account was not found.
+            - 500 Internal Server Error if an error occurred during activation token creation.
+    """
+    result = await db.execute(
+        select(User)
+        .options(joinedload(User.activation_token))
+        .where(User.email == user_data.email)
+    )
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with the given email not found.",
+        )
+
+    if db_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This user account is already active.",
+        )
+
+    existing_token = db_user.activation_token
+    if existing_token:
+        await db.delete(existing_token)
+        await db.commit()
+        await db.refresh(db_user)
+
+    try:
+        activation_token = ActivationToken(user_id=db_user.id)
+        db.add(activation_token)
+        await db.commit()
+
+        activation_link = f"{base_url}/activate/?token={activation_token.token}"
+        background_tasks.add_task(
+            email_sender.send_activation_email, db_user.email, activation_link
+        )
+
+    except SQLAlchemyError as error:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during activation link generation.",
+        ) from error
+    return MessageResponseSchema(
+        message="Account activation link sent successfully to your email."
+    )
