@@ -28,6 +28,12 @@ base_url = "http://127.0.0.1:8000/api/v1/accounts"
 email_sender = get_account_email_sender(settings)
 
 
+async def get_user_by_email(email: str, db: AsyncSession = Depends(get_db)) -> User:
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    return user
+
+
 @router.post(
     "/register/",
     response_model=UserRegistrationResponseSchema,
@@ -90,8 +96,7 @@ async def register_user(
             - 409 Conflict if a user with the same email exists.
             - 500 Internal Server Error if an error occurred during user creation.
     """
-    result = await db.execute(select(User).where(User.email == user_data.email))
-    existing_user = result.scalar_one_or_none()
+    existing_user = get_user_by_email(str(user_data.email), db)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
