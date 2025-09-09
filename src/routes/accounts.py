@@ -175,15 +175,19 @@ async def register_user(
     },
 )
 async def activate_account(
-    token: str = Query(...), db: AsyncSession = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
 ) -> MessageResponseSchema:
     """
     Account activation endpoint.
 
     Activates an existing user account using the token provided as query parameter.
+    Sends an email notification upon successful account activation.
     If the token is invalid, expired or the account is already active, an HTTP 400 error is raised.
 
     Args:
+        background_tasks (BackgroundTasks): Background tasks to schedule the email to be sent.
         token (str): The activation token to use.
         db (AsyncSession): Asynchronous database session.
 
@@ -219,6 +223,10 @@ async def activate_account(
         )
 
     user = token_record.user
+    login_link = f"{base_url}/login/"
+    background_tasks.add_task(
+        email_sender.send_activation_complete_email, user.email, login_link
+    )
     if user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
