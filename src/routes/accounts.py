@@ -18,13 +18,14 @@ from database.models.accounts import (
 from schemas.accounts import (
     UserRegistrationResponseSchema,
     UserRegistrationRequestSchema,
+    UserActivationRequestSchema,
     MessageResponseSchema,
 )
 
 router = APIRouter()
 
 settings = get_settings()
-base_url = "http://127.0.0.1:8000/api/v1/accounts"
+base_url = "http://127.0.0.1:8000/api/v1/cinema/accounts"
 email_sender = get_account_email_sender(settings)
 
 
@@ -96,7 +97,7 @@ async def register_user(
             - 409 Conflict if a user with the same email exists.
             - 500 Internal Server Error if an error occurred during user creation.
     """
-    existing_user = get_user_by_email(str(user_data.email), db)
+    existing_user = await get_user_by_email(str(user_data.email), db)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
