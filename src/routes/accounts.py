@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -14,11 +14,13 @@ from database.models.accounts import (
     UserGroup,
     UserGroupEnum,
     ActivationToken,
+    PasswordResetToken,
 )
 from schemas.accounts import (
     UserRegistrationResponseSchema,
     UserRegistrationRequestSchema,
     UserActivationRequestSchema,
+    PasswordResetRequestSchema,
     MessageResponseSchema,
 )
 
@@ -340,4 +342,45 @@ async def request_account_activation_link(
         ) from error
     return MessageResponseSchema(
         message="Account activation link sent successfully to your email."
+    )
+
+
+@router.post(
+    "/password-reset/request/",
+    response_model=MessageResponseSchema,
+    summary="Request Password Reset",
+    description="Request a password reset link to be sent to a given email.",
+    status_code=status.HTTP_200_OK,
+)
+async def request_password_reset(
+    user_data: PasswordResetRequestSchema,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    db_user = await get_user_by_email(str(user_data.email), db)
+    if not db_user or not db_user.is_active:
+        return MessageResponseSchema(
+            message="If you are registered, you will get an email with instructions."
+        )
+
+    await db.execute(
+        delete(PasswordResetToken).where(PasswordResetToken.user_id == db_user.id)
+    )
+    reset_token = PasswordResetToken(user_id=db_user.id)
+    db.add(reset_token)
+    await db.commit()
+    await db.refresh(reset_token)
+
+    if user_data.password_forgotten:
+        reset_link = f"{base_url}/password-reset/complete/"
+    else:
+        reset_link = f"{base_url}/password-reset/complete-old/"
+    background_tasks.add_task(
+        email_sender.send_password_reset_email,
+        db_user.email,
+        reset_token.token,
+        reset_link,
+    )
+    return MessageResponseSchema(
+        message="If you are registered, you will get an email with instructions."
     )
