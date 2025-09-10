@@ -35,3 +35,13 @@ class EmailSenderInterface(ABC):
             token (str): The token to include in the password reset completion form.
             password_reset_link (str): The password reset link to include in the email.
         """
+
+    @abstractmethod
+    async def send_password_reset_complete_email(self, email: str, login_link: str) -> None:
+        """
+        Send a password reset complete email asynchronously.
+
+        Args:
+        email (str): The recipient's email address.
+        login_link (str): The login link to include in the email.
+        """
