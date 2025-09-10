@@ -33,7 +33,9 @@ class EmailSender(EmailSenderInterface):
             activation_complete_email_template_name
         )
         self._password_reset_email_template_name = password_reset_email_template_name
-        self._old_password_reset_email_template_name = old_password_reset_email_template_name
+        self._old_password_reset_email_template_name = (
+            old_password_reset_email_template_name
+        )
         self._env = Environment(loader=FileSystemLoader(template_dir))
 
     async def _send_email(
@@ -101,13 +103,22 @@ class EmailSender(EmailSenderInterface):
     ) -> None:
         """
         Send a password reset link asynchronously.
+        The appropriate email template is chosen based on the type of reset link.
 
         Args:
             email (str): The recipient's email address.
             token (str): The token to include in the password reset completion form.
             password_reset_link (str): The password reset link to include in the email.
         """
-        template = self._env.get_template(self._password_reset_email_template_name)
-        html = template.render(email=email, token=token, reset_link=password_reset_link)
+        if password_reset_link.endswith("/complete/"):
+            template = self._env.get_template(self._password_reset_email_template_name)
+            html = template.render(
+                email=email, token=token, reset_link=password_reset_link
+            )
+        else:
+            template = self._env.get_template(
+                self._old_password_reset_email_template_name
+            )
+            html = template.render(email=email, reset_link=password_reset_link)
         subject = "Password Reset Request"
         await self._send_email(email, subject, html)
