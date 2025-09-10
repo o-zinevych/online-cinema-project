@@ -374,7 +374,7 @@ async def request_password_reset(
     if user_data.password_forgotten:
         reset_link = f"{base_url}/password-reset/complete/"
     else:
-        reset_link = f"{base_url}/password-reset/complete-old/"
+        reset_link = f"{base_url}/password-reset/complete/{reset_token.token}"
     background_tasks.add_task(
         email_sender.send_password_reset_email,
         db_user.email,
