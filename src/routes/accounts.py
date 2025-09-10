@@ -21,6 +21,7 @@ from schemas.accounts import (
     UserRegistrationRequestSchema,
     UserActivationRequestSchema,
     PasswordResetRequestSchema,
+    PasswordResetCompleteRequestSchema,
     MessageResponseSchema,
 )
 
@@ -400,3 +401,106 @@ async def request_password_reset(
     return MessageResponseSchema(
         message="If you are registered, you will get an email with instructions."
     )
+
+
+@router.post(
+    "/password-reset/complete/",
+    response_model=MessageResponseSchema,
+    summary="Complete Password Reset",
+    description="Complete the password reset by providing a reset token and new password.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid token or user status.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_token": {
+                            "summary": "Invalid Token",
+                            "value": "Invalid token.",
+                        },
+                        "inactive_user": {
+                            "summary": "Inactive User",
+                            "value": "User account was not activated.",
+                        },
+                    }
+                },
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during password reset.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred during password reset."}
+                }
+            },
+        },
+    },
+)
+async def complete_password_reset(
+    reset_data: PasswordResetCompleteRequestSchema,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Password reset completion endpoint.
+
+    Checks the reset token validity and user status, sets the password to the provided one.
+    If the token is invalid or the user account is inactive, an HTTP 400 error is raised.
+    In case of SQLAlchemyError, an HTTP 500 error is raised.
+
+    Args:
+        reset_data (PasswordResetCompleteRequestSchema): The reset token and new password provided.
+        background_tasks (BackgroundTasks): Background tasks to send the password reset success email notification.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A response message confirming successful password reset.
+
+    Raises:
+        HTTPException:
+            - 400 Bad Request if the token is invalid or the user account is inactive.
+            - 500 Internal Server Error if some error occurred during password reset.
+    """
+    reset_token = reset_data.token
+    result = await db.execute(
+        select(PasswordResetToken)
+        .options(joinedload(PasswordResetToken.user))
+        .where(PasswordResetToken.token == reset_token)
+    )
+    token_record = result.scalar_one_or_none()
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token."
+        )
+
+    user = token_record.user
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User account was not activated.",
+        )
+    login_link = f"{base_url}/login/"
+    background_tasks.add_task(
+        email_sender.send_password_reset_complete_email, user.email, login_link
+    )
+
+    now_utc = datetime.now(timezone.utc)
+    if token_record.expires_at.replace(tzinfo=timezone.utc) < now_utc:
+        await db.delete(token_record)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token."
+        )
+
+    try:
+        user.password = reset_data.password
+        await db.delete(token_record)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during password reset.",
+        )
+    return MessageResponseSchema(message="Password reset successfully.")
