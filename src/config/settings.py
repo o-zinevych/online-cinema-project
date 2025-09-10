@@ -20,3 +20,7 @@ class BaseAppSettings(BaseSettings):
     PASSWORD_RESET_EMAIL_TEMPLATE_NAME: str = "password_reset_request.html"
     OLD_PASSWORD_RESET_EMAIL_TEMPLATE_NAME: str = "old_password_reset_request.html"
     PASSWORD_RESET_COMPLETE_EMAIL_TEMPLATE_NAME: str = "password_reset_complete.html"
+
+    SECRET_KEY_ACCESS: str = os.getenv("SECRET_KEY_ACCESS", os.urandom(32))
+    SECRET_KEY_REFRESH: str = os.getenv("SECRET_KEY_REFRESH", os.urandom(32))
+    JWT_SIGNING_ALGORITHM: str = os.getenv("JWT_SIGNING_ALGORITHM", "HS256")
