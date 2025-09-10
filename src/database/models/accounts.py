@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from database.models.base import Base
 from database.validators.accounts import validate_password_strength, validate_email
-from security.utils import hash_password, generate_secure_token
+from security.utils import hash_password, generate_secure_token, verify_password
 
 
 class UserGroupEnum(str, enum.Enum):
@@ -110,6 +110,9 @@ class User(Base):
     @validates("email")
     def validate_email(self, key, email: str) -> str | None:
         return validate_email(email.lower())
+
+    def verify_password(self, raw_password: str) -> bool:
+        return verify_password(raw_password, self._hashed_password)
 
     def __repr__(self) -> str:
         return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
