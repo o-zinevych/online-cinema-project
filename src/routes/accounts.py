@@ -22,6 +22,7 @@ from schemas.accounts import (
     UserActivationRequestSchema,
     PasswordResetRequestSchema,
     PasswordResetCompleteRequestSchema,
+    OldPasswordResetCompleteRequestSchema,
     MessageResponseSchema,
 )
 
@@ -495,6 +496,120 @@ async def complete_password_reset(
 
     try:
         user.password = reset_data.password
+        await db.delete(token_record)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during password reset.",
+        )
+    return MessageResponseSchema(message="Password reset successfully.")
+
+
+@router.post(
+    "/password-reset/complete/{token}/",
+    response_model=MessageResponseSchema,
+    summary="Complete Old Password Reset",
+    description="Complete the password reset by providing the current and new passwords.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid token or user status.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_token": {
+                            "summary": "Invalid Token",
+                            "value": "Invalid token.",
+                        },
+                        "inactive_user": {
+                            "summary": "Inactive User",
+                            "value": "User account was not activated.",
+                        },
+                        "incorrect_password": {
+                            "summary": "Incorrect Password",
+                            "value": "The old password you entered is incorrect.",
+                        },
+                    }
+                },
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during password reset.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred during password reset."}
+                }
+            },
+        },
+    },
+)
+async def complete_old_password_reset(
+    token: str,
+    reset_data: OldPasswordResetCompleteRequestSchema,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Password reset completion endpoint for old password use.
+
+    Checks the reset token and user based on the value given in the path.
+    If the checks pass, the old password is verified. If incorrect, an HTTP 400 error is raised.
+    Then sets the given user's password to the new one and deletes the reset token.
+
+    Args:
+        token (str): The password reset token from the path.
+        reset_data (OldPasswordResetCompleteRequestSchema): The old and new passwords provided by the user.
+        background_tasks (BackgroundTasks): Background tasks to send the password reset success email notification.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A response message confirming successful password reset.
+
+    Raises:
+        HTTPException:
+            - 400 Bad Request if the token is invalid, the user account is inactive or the old password is incorrect.
+            - 500 Internal Server Error if some error occurred during password reset.
+    """
+    result = await db.execute(
+        select(PasswordResetToken)
+        .options(joinedload(PasswordResetToken.user))
+        .where(PasswordResetToken.token == token)
+    )
+    token_record = result.scalar_one_or_none()
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token."
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    if token_record.expires_at.replace(tzinfo=timezone.utc) < now_utc:
+        await db.delete(token_record)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token."
+        )
+
+    user = token_record.user
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User account was not activated.",
+        )
+    login_link = f"{base_url}/login/"
+    background_tasks.add_task(
+        email_sender.send_password_reset_complete_email, user.email, login_link
+    )
+
+    if not user.verify_password(reset_data.old_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The old password you entered is incorrect.",
+        )
+
+    try:
+        user.password = reset_data.new_password
         await db.delete(token_record)
         await db.commit()
     except SQLAlchemyError:
