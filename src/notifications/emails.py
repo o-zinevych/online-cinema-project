@@ -126,3 +126,20 @@ class EmailSender(EmailSenderInterface):
             html = template.render(email=email, reset_link=password_reset_link)
         subject = "Password Reset Request"
         await self._send_email(email, subject, html)
+
+    async def send_password_reset_complete_email(
+        self, email: str, login_link: str
+    ) -> None:
+        """
+        Send a password reset complete email asynchronously.
+
+        Args:
+        email (str): The recipient's email address.
+        login_link (str): The login link to include in the email.
+        """
+        template = self._env.get_template(
+            self._password_reset_complete_email_template_name
+        )
+        html = template.render(email=email, login_link=login_link)
+        subject = "Password Reset Complete"
+        await self._send_email(email, subject, html)
