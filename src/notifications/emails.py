@@ -21,6 +21,7 @@ class EmailSender(EmailSenderInterface):
         activation_email_template_name: str,
         activation_complete_email_template_name: str,
         password_reset_email_template_name: str,
+        old_password_reset_email_template_name: str,
     ) -> None:
         self._hostname = hostname
         self._port = port
@@ -32,6 +33,7 @@ class EmailSender(EmailSenderInterface):
             activation_complete_email_template_name
         )
         self._password_reset_email_template_name = password_reset_email_template_name
+        self._old_password_reset_email_template_name = old_password_reset_email_template_name
         self._env = Environment(loader=FileSystemLoader(template_dir))
 
     async def _send_email(
