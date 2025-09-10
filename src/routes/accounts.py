@@ -357,6 +357,22 @@ async def request_password_reset(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponseSchema:
+    """
+    Password reset request endpoint.
+
+    Sends an email notification with the appropriate password reset link.
+    The user chooses if they remember their password in the request to receive corresponding instructions.
+    If the user doesn't exist or is already active, the same response is returned for privacy reasons.
+    In any case, it deletes the old reset token and provides a new one.
+
+    Args:
+        user_data (PasswordResetRequestSchema): The user's email and type of reset choice.
+        background_tasks (BackgroundTasks): Background tasks to send the password reset email notification.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A response message confirming the sending of email notification with the instructions.
+    """
     db_user = await get_user_by_email(str(user_data.email), db)
     if not db_user or not db_user.is_active:
         return MessageResponseSchema(
