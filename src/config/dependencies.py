@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings
 from config.settings import BaseAppSettings
 from notifications.emails import EmailSender
 from notifications.interfaces import EmailSenderInterface
+from security.interfaces import JWTAuthManagerInterface
+from security.token_manager import JWTAuthManager
 
 
 def get_settings() -> BaseSettings:
@@ -42,4 +44,28 @@ def get_account_email_sender(
         password_reset_email_template_name=settings.PASSWORD_RESET_EMAIL_TEMPLATE_NAME,
         old_password_reset_email_template_name=settings.OLD_PASSWORD_RESET_EMAIL_TEMPLATE_NAME,
         password_reset_complete_email_template_name=settings.PASSWORD_RESET_COMPLETE_EMAIL_TEMPLATE_NAME,
+    )
+
+
+def get_jwt_auth_manager(
+    settings: BaseAppSettings = Depends(get_settings),
+) -> JWTAuthManagerInterface:
+    """
+    Create and return a JWT authentication manager instance.
+
+    This function uses the given settings to instantiate the JWTAuthManager class based
+    on the JWTAuthManagerInterface. The manager is configured using the specified signing
+    algorithm and secret keys for access and refresh tokens.
+
+    Args:
+        settings (BaseAppSettings, optional): The application settings.
+
+    Returns:
+        JWTAuthManagerInterface: An instance of the JWTAuthManager configured with the
+        appropriate secret keys and algorithm.
+    """
+    return JWTAuthManager(
+        secret_key_access=settings.SECRET_KEY_ACCESS,
+        secret_key_refresh=settings.SECRET_KEY_REFRESH,
+        algorithm=settings.JWT_SIGNING_ALGORITHM,
     )
