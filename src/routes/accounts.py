@@ -22,6 +22,7 @@ from database.models.accounts import (
     PasswordResetToken,
     RefreshToken,
 )
+from exceptions.security import BaseSecurityError
 from schemas.accounts import (
     UserRegistrationResponseSchema,
     UserRegistrationRequestSchema,
@@ -32,6 +33,8 @@ from schemas.accounts import (
     UserLoginRequestSchema,
     UserLoginResponseSchema,
     MessageResponseSchema,
+    TokenRefreshRequestSchema,
+    TokenRefreshResponseSchema,
 )
 from security.token_manager import JWTAuthManager
 
@@ -724,3 +727,81 @@ async def login_user(
     return UserLoginResponseSchema(
         access_token=jwt_access_token, refresh_token=jwt_refresh_token
     )
+
+
+@router.post(
+    "/refresh-token/",
+    response_model=TokenRefreshResponseSchema,
+    summary="Refresh Access Token",
+    description="Get a new access token by providing the refresh one.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Unauthorized - Invalid or expired token.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "A security error has occurred."}
+                }
+            },
+        },
+        401: {
+            "description": "Unauthorized - The refresh token was not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Refresh token not found."}}
+            },
+        },
+        404: {
+            "description": "The user associated with the token not found.",
+            "content": {"application/json": {"example": {"detail": "User not found."}}},
+        },
+    },
+)
+async def refresh_access_token(
+    token_data: TokenRefreshRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    jwt_manager: JWTAuthManager = Depends(get_jwt_auth_manager),
+) -> TokenRefreshResponseSchema:
+    """
+    Access token refresh endpoint.
+
+    Decodes the given refresh token, checks its validity and existence in the database.
+    If the user does not exist, an HTTP 404 error is raised. Otherwise, a new access token is generated.
+
+    Args:
+        token_data (TokenRefreshRequestSchema): The refresh token data.
+        db (AsyncSession): Asynchronous database session.
+        jwt_manager (JWTAuthManager): The JWTAuthManager to create JWT tokens.
+
+    Returns:
+        TokenRefreshResponseSchema: A response with the new access token.
+
+    Raises:
+        HTTPException:
+            - 400 Bad Request if the refresh token is invalid or expired.
+            - 401 Unauthorized if the refresh token was not found.
+            - 404 Not Found if the user associated with the token was not found.
+    """
+    try:
+        decoded_token = jwt_manager.decode_refresh_token(token_data.refresh_token)
+        user_id = decoded_token.get("user_id")
+    except BaseSecurityError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token == token_data.refresh_token)
+    )
+    refresh_token_record = result.scalar_one_or_none()
+    if not refresh_token_record:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token not found."
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+
+    jwt_access_token = jwt_manager.create_access_token({"user_id": user_id})
+    return TokenRefreshResponseSchema(access_token=jwt_access_token)
