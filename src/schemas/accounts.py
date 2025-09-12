@@ -70,3 +70,12 @@ class UserLoginResponseSchema(BaseModel):
 
 class MessageResponseSchema(BaseModel):
     message: str
+
+
+class TokenRefreshRequestSchema(BaseModel):
+    refresh_token: str
+
+
+class TokenRefreshResponseSchema(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
