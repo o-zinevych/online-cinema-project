@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from starlette import status
 
-from config.dependencies import get_account_email_sender, get_settings
+from config.dependencies import (
+    get_account_email_sender,
+    get_settings,
+    get_jwt_auth_manager,
+)
+from config.settings import BaseAppSettings
 from database import get_db
 from database.models.accounts import (
     User,
@@ -15,6 +20,7 @@ from database.models.accounts import (
     UserGroupEnum,
     ActivationToken,
     PasswordResetToken,
+    RefreshToken,
 )
 from schemas.accounts import (
     UserRegistrationResponseSchema,
@@ -23,14 +29,16 @@ from schemas.accounts import (
     PasswordResetRequestSchema,
     PasswordResetCompleteRequestSchema,
     OldPasswordResetCompleteRequestSchema,
+    UserLoginRequestSchema,
+    UserLoginResponseSchema,
     MessageResponseSchema,
 )
+from security.token_manager import JWTAuthManager
 
 router = APIRouter()
 
-settings = get_settings()
 base_url = "http://127.0.0.1:8000/api/v1/cinema/accounts"
-email_sender = get_account_email_sender(settings)
+email_sender = get_account_email_sender(get_settings())
 
 
 async def get_user_by_email(email: str, db: AsyncSession = Depends(get_db)) -> User:
@@ -619,3 +627,100 @@ async def complete_old_password_reset(
             detail="An error occurred during password reset.",
         )
     return MessageResponseSchema(message="Password reset successfully.")
+
+
+@router.post(
+    "/login/",
+    response_model=UserLoginResponseSchema,
+    summary="User Login",
+    description="Authenticate the user and return access and refresh tokens.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {
+            "description": "Unauthorized - Invalid email or password",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Incorrect email or password."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - User account is not active.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "User account is not activated."}
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during token creation.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred while processing the login request."
+                    }
+                }
+            },
+        },
+    },
+)
+async def login_user(
+    login_data: UserLoginRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    settings: BaseAppSettings = Depends(get_settings),
+    jwt_manager: JWTAuthManager = Depends(get_jwt_auth_manager),
+) -> UserLoginResponseSchema:
+    """
+    User login endpoint.
+
+    Authenticates the user, checks that their account is active and generates an access and refresh token.
+
+    Args:
+        login_data (UserLoginRequestSchema): The user login credentials including email and password.
+        db (AsyncSession): Asynchronous database session.
+        settings (BaseAppSettings): The application settings.
+        jwt_manager (JWTAuthManager): The JWTAuthManager to create JWT tokens.
+
+    Returns:
+        UserLoginResponseSchema: A response with the access and refresh tokens.
+
+    Raises:
+        HTTPException:
+            - 401 Unauthorized if the user's email or password are incorrect.
+            - 403 Forbidden if the user's account has not been activated.
+            - 500 Internal Server Error if an error occurred during token creation.
+    """
+    user = await get_user_by_email(str(login_data.email), db)
+    if not user or user.verify_password(login_data.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is not activated.",
+        )
+
+    jwt_refresh_token = jwt_manager.create_refresh_token({"user_id": user.id})
+    try:
+        refresh_token = RefreshToken.create(
+            user_id=user.id,
+            token=jwt_refresh_token,
+            days_valid=settings.LOGIN_TIME_DAYS,
+        )
+        db.add(refresh_token)
+        await db.flush()
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing the login request.",
+        )
+
+    jwt_access_token = jwt_manager.create_access_token({"user_id": user.id})
+    return UserLoginResponseSchema(
+        access_token=jwt_access_token, refresh_token=jwt_refresh_token
+    )
