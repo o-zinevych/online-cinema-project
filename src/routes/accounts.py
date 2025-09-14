@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,12 +43,50 @@ router = APIRouter()
 
 base_url = "http://127.0.0.1:8000/api/v1/cinema/accounts"
 email_sender = get_account_email_sender(get_settings())
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 async def get_user_by_email(email: str, db: AsyncSession = Depends(get_db)) -> User:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     return user
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+    jwt_manager: JWTAuthManager = Depends(get_jwt_auth_manager),
+) -> User:
+    """
+    Retrieves the current user by decoding the JWT access token.
+
+    Args:
+        token (str): JWT access token.
+        db (AsyncSession): Asynchronous database session.
+        jwt_manager (JWTAuthManager): JWT auth manager to decode the token.
+
+    Returns:
+        User: The current user.
+
+    Raises:
+        HTTPException:
+            - 401 Unauthorized if the token does not contain user id.
+            - 404 Not Found if user with the given id was not found.
+    """
+    payload = jwt_manager.decode_access_token(token)
+    user_id = payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token.",
+        )
+    result = await db.execute(select(User).where(User.id == user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+    return db_user
 
 
 @router.post(
@@ -805,3 +844,45 @@ async def refresh_access_token(
 
     jwt_access_token = jwt_manager.create_access_token({"user_id": user_id})
     return TokenRefreshResponseSchema(access_token=jwt_access_token)
+
+
+@router.post(
+    "/logout/",
+    response_model=MessageResponseSchema,
+    summary="User Logout",
+    description="Logout the user by removing all their refresh tokens.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {
+            "description": "Unauthorized - Invalid access token.",
+            "content": {"application/json": {"example": {"detail": "Invalid token."}}},
+        },
+        404: {
+            "description": "Not Found - Current user was not found.",
+            "content": {"application/json": {"example": {"detail": "User not found."}}},
+        },
+    },
+)
+async def logout_user(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> MessageResponseSchema:
+    """
+    User logout endpoint.
+
+    Removes all the refresh tokens associated with the current user.
+
+    Args:
+        user (User): Current user.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A message notifying the user about successful logout.
+
+    Raises:
+        HTTPException:
+            - 401 Unauthorized if the user's credentials are invalid.
+            - 404 Not Found if the current user was not found.
+    """
+    await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
+    await db.commit()
+    return MessageResponseSchema(message="User successfully logged out.")
