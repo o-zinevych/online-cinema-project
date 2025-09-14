@@ -180,5 +180,15 @@ class RefreshToken(TokenBase):
 
     user: Mapped["User"] = relationship("User", back_populates="refresh_token")
 
+    @classmethod
+    def create(cls, user_id: int, token: str, days_valid: int) -> "RefreshToken":
+        """
+        Method to simplify the creation of a refresh token.
+        Calculates the expiration time using the days_valid argument and sets
+        the required attributes.
+        """
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days_valid)
+        return cls(user_id=user_id, token=token, expires_at=expires_at)
+
     def __repr__(self) -> str:
         return f"RefreshToken(user_id={self.user_id}, token={self.token}), expires_at={self.expires_at}"
