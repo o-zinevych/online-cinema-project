@@ -1,5 +1,9 @@
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 
+from database.models.accounts import UserGroupEnum
 from database.validators.accounts import validate_password_strength
 
 
@@ -79,3 +83,24 @@ class TokenRefreshRequestSchema(BaseModel):
 class TokenRefreshResponseSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class AdminUserUpdateRequestSchema(BaseModel):
+    email: Optional[EmailStr] = None
+    is_active: Optional[bool] = None
+    group_id: Optional[int] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        return value.lower()
+
+
+class AdminUserUpdateResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    email: EmailStr
+    is_active: bool
+    group_id: int
+    updated_at: datetime
