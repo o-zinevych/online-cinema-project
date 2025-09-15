@@ -890,7 +890,7 @@ async def update_user(
     user_data: AdminUserUpdateRequestSchema,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
-):
+) -> AdminUserUpdateResponseSchema:
     """
     Admin user update endpoint.
 
@@ -949,3 +949,79 @@ async def update_user(
         group_id=db_user.group_id,
         updated_at=db_user.updated_at,
     )
+
+
+@router.delete(
+    "/delete-user/{user_id}",
+    response_model=MessageResponseSchema,
+    summary="User Delete for Admin",
+    description="User account deletion endpoint for admin users.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Must be admin.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You must be an administrator to do this."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - User not found.",
+            "content": {"application/json": {"example": {"detail": "User not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred when deleting the user.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred during user deletion."}
+                }
+            },
+        },
+    },
+)
+async def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    User account deletion endpoint.
+
+    Deletes the user account with the given id if it exists and if current user is admin.
+    If the user does not exist, an HTTP 404 error is raised.
+    If the current user is not admin, an HTTP 403 error is raised.
+
+    Args:
+        user_id (int): The id of the user to be deleted.
+        current_user (User): The current admin user.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A message confirming successful deletion of the user.
+
+    Raises:
+        HTTPException:
+            - 403 Forbidden if the user does not have admin permissions.
+            - 404 Not Found if the user with the given id does not exist.
+            - 500 Internal Server Error if an error occurs when deleting the user.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+
+    try:
+        await db.delete(db_user)
+        await db.commit()
+        return MessageResponseSchema(
+            message=f"User with id {user_id} deleted successfully."
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during user deletion.",
+        )
