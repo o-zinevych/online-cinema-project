@@ -35,8 +35,10 @@ from schemas.accounts import (
     MessageResponseSchema,
     TokenRefreshRequestSchema,
     TokenRefreshResponseSchema,
+    AdminUserUpdateRequestSchema,
+    AdminUserUpdateResponseSchema,
 )
-from security.account_utils import get_user_by_email, get_current_user
+from security.account_utils import get_user_by_email, get_current_user, require_admin
 from security.token_manager import JWTAuthManager
 
 router = APIRouter()
@@ -842,3 +844,108 @@ async def logout_user(
     await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
     await db.commit()
     return MessageResponseSchema(message="User successfully logged out.")
+
+
+@router.patch(
+    "/manage-user/{user_id}",
+    response_model=AdminUserUpdateResponseSchema,
+    summary="User Update for Admin",
+    description="User account update endpoint for an admin user.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - No update data.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "No data provided for update."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - Must be admin.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You must be an administrator to do this."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - User not found.",
+            "content": {"application/json": {"example": {"detail": "User not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during user update.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error has occurred while updating user data."
+                    }
+                }
+            },
+        },
+    },
+)
+async def update_user(
+    user_id: int,
+    user_data: AdminUserUpdateRequestSchema,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin user update endpoint.
+
+    Retrieves the user to be updated, checks their existence in the database.
+    If the user does not exist, an HTTP 404 error is raised.
+    Then updates the user's data with the data provided in the request.
+
+    Args:
+        user_id (int): The id of the user to be updated.
+        user_data (AdminUserUpdateRequestSchema): The user data to be updated.
+        current_user (User): The current admin user.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        AdminUserUpdateResponseSchema: A message with the updated data and time of update.
+
+    Raises:
+        HTTPException:
+            - 400 Bad Request if no update data is provided.
+            - 403 Forbidden if the user does not have admin permissions.
+            - 404 Not Found if the user with the given id does not exist.
+            - 500 Internal Server Error if an error occurs when updating the user.
+    """
+    update_data = user_data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No data provided for update.",
+        )
+
+    result = await db.execute(
+        select(User).options(joinedload(User.group)).where(User.id == user_id)
+    )
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+
+    try:
+        for field, value in update_data.items():
+            if hasattr(db_user, field):
+                setattr(db_user, field, value)
+        await db.commit()
+        await db.refresh(db_user)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error has occurred while updating user data.",
+        )
+    return AdminUserUpdateResponseSchema(
+        user_id=user_id,
+        email=db_user.email,
+        is_active=db_user.is_active,
+        group_id=db_user.group_id,
+        updated_at=db_user.updated_at,
+    )
