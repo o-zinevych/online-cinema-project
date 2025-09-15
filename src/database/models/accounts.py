@@ -18,7 +18,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from database.models.base import Base
 from database.validators.accounts import validate_password_strength, validate_email
-from security.utils import hash_password, generate_secure_token, verify_password
+from security.password_utils import (
+    hash_password,
+    generate_secure_token,
+    verify_password,
+)
 
 
 class UserGroupEnum(str, enum.Enum):
