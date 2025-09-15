@@ -6,7 +6,7 @@ from starlette import status
 
 from config.dependencies import get_jwt_auth_manager
 from database import get_db
-from database.models.accounts import User
+from database.models.accounts import User, UserGroup
 from security.token_manager import JWTAuthManager
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -53,3 +53,26 @@ async def get_current_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
     return db_user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """
+    Checks that the current user is an admin.
+
+    Args:
+        current_user (User): The current user.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        User: The current user.
+    """
+    result = await db.execute(select(UserGroup).where(UserGroup.name == "ADMIN"))
+    admin_group = result.scalars().first()
+    if current_user.group_id != admin_group.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You must be an administrator to do this.",
+        )
+    return current_user
