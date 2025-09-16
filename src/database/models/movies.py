@@ -1,6 +1,19 @@
-from uuid import UUID
+from decimal import Decimal
+from typing import Optional
+from uuid import UUID as UUID_TYPE
 
-from sqlalchemy import Integer, String, Table, Column, ForeignKey, UUID
+from sqlalchemy import (
+    Integer,
+    String,
+    Table,
+    Column,
+    ForeignKey,
+    UUID,
+    Float,
+    Text,
+    DECIMAL,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.models.base import Base
@@ -117,4 +130,42 @@ class Certification(Base):
 
 
 class Movie(Base):
-    pass
+    __tablename__ = "movies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    uuid: Mapped[UUID_TYPE] = mapped_column(UUID, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    time: Mapped[int] = mapped_column(Integer, nullable=False)
+    imdb: Mapped[float] = mapped_column(Float, nullable=False)
+    votes: Mapped[int] = mapped_column(Integer, nullable=False)
+    meta_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gross: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    price: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=True)
+
+    certification_id: Mapped[int] = mapped_column(
+        ForeignKey("certifications.id", ondelete="CASCADE"), nullable=False
+    )
+    certification: Mapped["Certification"] = relationship(
+        "Certification", back_populates="movies"
+    )
+
+    genres: Mapped[list["Genre"]] = relationship(
+        "Genre", secondary=MovieGenresModel, back_populates="movies"
+    )
+    directors: Mapped[list["Director"]] = relationship(
+        "Director", secondary=MovieDirectorsModel, back_populates="movies"
+    )
+    stars: Mapped[list["Star"]] = relationship(
+        "Star", secondary=MovieStarsModel, back_populates="movies"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "name", "year", "time", name="movie_name_year_time_constraint"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"Movie(name={self.name}, year={self.year}, imdb_score={self.imdb})"
