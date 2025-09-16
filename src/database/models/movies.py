@@ -1,4 +1,6 @@
-from sqlalchemy import Integer, String, Table, Column, ForeignKey
+from uuid import UUID
+
+from sqlalchemy import Integer, String, Table, Column, ForeignKey, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.models.base import Base
@@ -62,7 +64,7 @@ class Genre(Base):
     __tablename__ = "genres"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
     movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=MovieGenresModel, back_populates="genres"
@@ -76,7 +78,7 @@ class Star(Base):
     __tablename__ = "stars"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
     movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=MovieStarsModel, back_populates="stars"
@@ -90,7 +92,7 @@ class Director(Base):
     __tablename__ = "directors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
     movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=MovieDirectorsModel, back_populates="directors"
@@ -104,7 +106,7 @@ class Certification(Base):
     __tablename__ = "certifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
     movies: Mapped[list["Movie"]] = relationship(
         "Movie", back_populates="certification"
