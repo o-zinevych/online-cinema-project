@@ -100,5 +100,19 @@ class Director(Base):
         return f"Director(name={self.name})"
 
 
+class Certification(Base):
+    __tablename__ = "certifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    movies: Mapped[list["Movie"]] = relationship(
+        "Movie", back_populates="certification"
+    )
+
+    def __repr__(self) -> str:
+        return f"Certification(name={self.name})"
+
+
 class Movie(Base):
     pass
