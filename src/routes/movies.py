@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select, func, Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -12,6 +12,36 @@ from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterP
 from security.account_utils import get_current_user
 
 router = APIRouter()
+
+
+def apply_movie_filters(stmt, **filters) -> Select:
+    """Applies the filters from the given dictionary to the base query."""
+    name = filters.get("name")
+    if name:
+        stmt = stmt.filter(Movie.name.ilike(f"%{name}%"))
+
+    year = filters.get("year")
+    year_to = filters.get("year_to")
+    year_from = filters.get("year_from")
+    if year:
+        stmt = stmt.filter(Movie.year == year)
+    elif year_to and year_from:
+        stmt = stmt.filter(Movie.year.between(year_from, year_to))
+    elif year_to:
+        stmt = stmt.filter(Movie.year.__le__(year_to))
+    elif year_from:
+        stmt = stmt.filter(Movie.year.__ge__(year_from))
+
+    shorter_than = filters.get("shorter_than")
+    longer_than = filters.get("longer_than")
+    if shorter_than and longer_than:
+        stmt = stmt.filter(Movie.time.between(longer_than, shorter_than))
+    elif shorter_than:
+        stmt = stmt.filter(Movie.time.__le__(shorter_than))
+    elif longer_than:
+        stmt = stmt.filter(Movie.time.__ge__(longer_than))
+
+    return stmt
 
 
 @router.get(
@@ -62,30 +92,8 @@ async def get_movies(
     per_page = filter_query.per_page
 
     stmt = select(Movie)
-    name = filter_query.name
-    if name:
-        stmt = stmt.filter(Movie.name.ilike(f"%{name}%"))
-
-    year = filter_query.year
-    year_to = filter_query.year_to
-    year_from = filter_query.year_from
-    if year:
-        stmt = stmt.filter(Movie.year == year)
-    elif year_to and year_from:
-        stmt = stmt.filter(Movie.year.between(year_from, year_to))
-    elif year_to:
-        stmt = stmt.filter(Movie.year.__le__(year_to))
-    elif year_from:
-        stmt = stmt.filter(Movie.year.__ge__(year_from))
-
-    shorter_than = filter_query.shorter_than
-    longer_than = filter_query.longer_than
-    if shorter_than and longer_than:
-        stmt = stmt.filter(Movie.time.between(longer_than, shorter_than))
-    elif shorter_than:
-        stmt = stmt.filter(Movie.time.__le__(shorter_than))
-    elif longer_than:
-        stmt = stmt.filter(Movie.time.__ge__(longer_than))
+    filter_params = filter_query.model_dump()
+    stmt = apply_movie_filters(stmt, **filter_params)
 
     count_stmt = select(func.count()).select_from(stmt.alias())
     count_result = await db.execute(count_stmt)
@@ -106,23 +114,55 @@ async def get_movies(
         movies=movie_list,
         prev_page=(
             f"/cinema/movies/?page={page - 1}&per_page={per_page}"
-            + (f"&name={name}" if name else "")
-            + (f"&year={year}" if year else "")
-            + (f"&year_from={year_from}" if year_from and not year else "")
-            + (f"&year_to={year_to}" if year_to and not year else "")
-            + (f"&longer_than={longer_than}" if longer_than else "")
-            + (f"&shorter_than={shorter_than}" if shorter_than else "")
+            + (f"&name={filter_query.name}" if filter_query.name else "")
+            + (f"&year={filter_query.year}" if filter_query.year else "")
+            + (
+                f"&year_from={filter_query.year_from}"
+                if filter_query.year_from and not filter_query.year
+                else ""
+            )
+            + (
+                f"&year_to={filter_query.year_to}"
+                if filter_query.year_to and not filter_query.year
+                else ""
+            )
+            + (
+                f"&longer_than={filter_query.longer_than}"
+                if filter_query.longer_than
+                else ""
+            )
+            + (
+                f"&shorter_than={filter_query.shorter_than}"
+                if filter_query.shorter_than
+                else ""
+            )
             if page > 1
             else None
         ),
         next_page=(
             f"/cinema/movies/?page={page + 1}&per_page={per_page}"
-            + (f"&name={name}" if name else "")
-            + (f"&year={year}" if year else "")
-            + (f"&year_from={year_from}" if year_from and not year else "")
-            + (f"&year_to={year_to}" if year_to and not year else "")
-            + (f"&longer_than={longer_than}" if longer_than else "")
-            + (f"&shorter_than={shorter_than}" if shorter_than else "")
+            + (f"&name={filter_query.name}" if filter_query.name else "")
+            + (f"&year={filter_query.year}" if filter_query.year else "")
+            + (
+                f"&year_from={filter_query.year_from}"
+                if filter_query.year_from and not filter_query.year
+                else ""
+            )
+            + (
+                f"&year_to={filter_query.year_to}"
+                if filter_query.year_to and not filter_query.year
+                else ""
+            )
+            + (
+                f"&longer_than={filter_query.longer_than}"
+                if filter_query.longer_than
+                else ""
+            )
+            + (
+                f"&shorter_than={filter_query.shorter_than}"
+                if filter_query.shorter_than
+                else ""
+            )
             if page < total_pages
             else None
         ),
