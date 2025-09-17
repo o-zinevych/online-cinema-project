@@ -66,3 +66,7 @@ class FilterParams(BaseModel):
     imdb_to: Optional[float] = Field(
         None, ge=10, description="Filter movies by imdb score."
     )
+
+    genres: Optional[str] = Field(
+        None, min_length=1, description="Filter movies by genres."
+    )

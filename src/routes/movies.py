@@ -3,12 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import select, func, Select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
 from database import get_db
 from database.models.accounts import User
-from database.models.movies import Movie, Certification
+from database.models.movies import Movie, Certification, Genre
 from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterParams
 from security.account_utils import get_current_user
 
@@ -61,6 +61,12 @@ def apply_movie_filters(stmt, **filters) -> Select:
             Movie.certification.has(Certification.name.ilike(certification))
         )
 
+    genres = filters.get("genres")
+    if genres:
+        genre_list = [genre.strip() for genre in genres.split(",")]
+        for genre in genre_list:
+            stmt = stmt.filter(Movie.genres.any(Genre.name.ilike(genre)))
+
     return stmt
 
 
@@ -111,7 +117,9 @@ async def get_movies(
     page = filter_query.page
     per_page = filter_query.per_page
 
-    stmt = select(Movie).options(joinedload(Movie.certification))
+    stmt = select(Movie).options(
+        joinedload(Movie.certification), selectinload(Movie.genres)
+    )
     filter_params = filter_query.model_dump()
     stmt = apply_movie_filters(stmt, **filter_params)
 
@@ -168,6 +176,7 @@ async def get_movies(
                 if filter_query.certification
                 else ""
             )
+            + (f"genres={filter_query.genres}" if filter_query.genres else "")
             if page > 1
             else None
         ),
@@ -202,6 +211,7 @@ async def get_movies(
                 if filter_query.certification
                 else ""
             )
+            + (f"genres={filter_query.genres}" if filter_query.genres else "")
             if page < total_pages
             else None
         ),
