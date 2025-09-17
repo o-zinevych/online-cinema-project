@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends, HTTPException
-from sqlalchemy import select, func, Select
+from sqlalchemy import select, func, Select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 def apply_movie_filters(stmt, **filters) -> Select:
-    """Applies the filters from the given dictionary to the base query."""
+    """Applies the filters and ordering from the given dictionary to the base query."""
     name = filters.get("name")
     if name:
         stmt = stmt.filter(Movie.name.ilike(f"%{name}%"))
@@ -81,6 +81,16 @@ def apply_movie_filters(stmt, **filters) -> Select:
         for star in star_list:
             stmt = stmt.filter(Movie.stars.any(Star.name.ilike(f"%{star}%")))
 
+    order_by = filters.get("order_by")
+    if order_by == "id":
+        stmt = stmt.order_by(Movie.id)
+    elif order_by == "name":
+        stmt = stmt.order_by(Movie.name)
+    elif order_by == "year":
+        stmt = stmt.order_by(desc(Movie.year))
+    elif order_by == "imdb":
+        stmt = stmt.order_by(desc(Movie.imdb))
+
     return stmt
 
 
@@ -111,6 +121,8 @@ async def get_movies(
     the number of items per page. It also calculates the total number of pages and items.
     Provides the links to previous and next pages when applicable.
     The list can be filtered and searched by the required movie fields.
+    The list is sorted by id by default, but the client can sort it by the name,
+    year and score.
 
     Args:
         filter_query: The filters to apply to the query.
@@ -158,7 +170,7 @@ async def get_movies(
     return MovieListResponseSchema(
         movies=movie_list,
         prev_page=(
-            f"/cinema/movies/?page={page - 1}&per_page={per_page}"
+            f"/cinema/movies/?page={page - 1}&per_page={per_page}&order_by={filter_query.order_by}"
             + (f"&name={filter_query.name}" if filter_query.name else "")
             + (
                 f"&description={filter_query.description}"
@@ -200,7 +212,7 @@ async def get_movies(
             else None
         ),
         next_page=(
-            f"/cinema/movies/?page={page + 1}&per_page={per_page}"
+            f"/cinema/movies/?page={page + 1}&per_page={per_page}&order_by={filter_query.order_by}"
             + (f"&name={filter_query.name}" if filter_query.name else "")
             + (f"&year={filter_query.year}" if filter_query.year else "")
             + (

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +36,7 @@ class MovieListResponseSchema(BaseModel):
 class FilterParams(BaseModel):
     page: int = Field(1, ge=1)
     per_page: int = Field(10, ge=1, le=100)
+    order_by: Literal["id", "name", "year", "imdb"] = "id"
 
     name: Optional[str] = Field(
         None, min_length=1, max_length=250, description="Search by movie name."
