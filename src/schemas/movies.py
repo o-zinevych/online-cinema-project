@@ -46,3 +46,10 @@ class FilterParams(BaseModel):
     year_from: Optional[int] = Field(
         None, description="Filter movies starting from this year."
     )
+
+    shorter_than: Optional[int] = Field(
+        None, ge=1, description="Filter movies by duration shorter than this."
+    )
+    longer_than: Optional[int] = Field(
+        None, ge=1, description="Filter movies by duration longer than this."
+    )

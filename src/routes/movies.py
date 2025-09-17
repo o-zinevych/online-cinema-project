@@ -80,6 +80,15 @@ async def get_movies(
     if year_from:
         stmt = stmt.filter(Movie.year.__ge__(year_from))
 
+    shorter_than = filter_query.shorter_than
+    longer_than = filter_query.longer_than
+    if shorter_than and longer_than:
+        stmt = stmt.filter(Movie.time.between(longer_than, shorter_than))
+    elif shorter_than:
+        stmt = stmt.filter(Movie.time.__le__(shorter_than))
+    elif longer_than:
+        stmt = stmt.filter(Movie.time.__ge__(longer_than))
+
     offset = (page - 1) * per_page
     stmt = stmt.limit(per_page).offset(offset)
     movie_result = await db.execute(stmt)
