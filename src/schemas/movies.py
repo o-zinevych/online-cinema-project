@@ -40,3 +40,9 @@ class FilterParams(BaseModel):
     name: Optional[str] = Field(
         None, min_length=1, max_length=250, description="Search by movie name."
     )
+
+    year: Optional[int] = Field(None, description="Search by year.")
+    year_to: Optional[int] = Field(None, description="Filter movies up to this year.")
+    year_from: Optional[int] = Field(
+        None, description="Filter movies starting from this year."
+    )
