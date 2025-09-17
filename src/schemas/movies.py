@@ -53,3 +53,10 @@ class FilterParams(BaseModel):
     longer_than: Optional[int] = Field(
         None, ge=1, description="Filter movies by duration longer than this."
     )
+
+    imdb_from: Optional[float] = Field(
+        None, ge=0, description="Filter movies by imdb score."
+    )
+    imdb_to: Optional[float] = Field(
+        None, ge=10, description="Filter movies by imdb score."
+    )

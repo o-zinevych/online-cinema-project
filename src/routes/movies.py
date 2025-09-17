@@ -41,6 +41,15 @@ def apply_movie_filters(stmt, **filters) -> Select:
     elif longer_than:
         stmt = stmt.filter(Movie.time.__ge__(longer_than))
 
+    imdb_from = filters.get("imdb_from")
+    imdb_to = filters.get("imdb_to")
+    if imdb_from and imdb_to:
+        stmt = stmt.filter(Movie.imdb.between(imdb_from, imdb_to))
+    elif imdb_from:
+        stmt = stmt.filter(Movie.imdb.__ge__(imdb_from))
+    elif imdb_to:
+        stmt = stmt.filter(Movie.imdb.__le__(imdb_to))
+
     return stmt
 
 
@@ -136,6 +145,8 @@ async def get_movies(
                 if filter_query.shorter_than
                 else ""
             )
+            + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
+            + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
             if page > 1
             else None
         ),
@@ -163,6 +174,8 @@ async def get_movies(
                 if filter_query.shorter_than
                 else ""
             )
+            + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
+            + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
             if page < total_pages
             else None
         ),
