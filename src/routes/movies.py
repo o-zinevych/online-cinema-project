@@ -64,8 +64,14 @@ async def get_movies(
     page = filter_query.page
     per_page = filter_query.per_page
 
+    stmt = select(Movie)
+    name = filter_query.name
+    if name:
+        stmt = stmt.filter(Movie.name.ilike(f"%{name}%"))
+
     offset = (page - 1) * per_page
-    movie_result = await db.execute(select(Movie).limit(per_page).offset(offset))
+    stmt = stmt.limit(per_page).offset(offset)
+    movie_result = await db.execute(stmt)
     movies = movie_result.scalars().all()
     if not movies:
         raise no_movies_exception
