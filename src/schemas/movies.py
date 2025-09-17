@@ -17,7 +17,7 @@ class MovieListItemSchema(BaseModel):
     id: int
     name: str
     year: int
-    imdb_score: float
+    imdb: float
 
 
 class MovieListResponseSchema(BaseModel):
