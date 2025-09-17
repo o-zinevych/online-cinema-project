@@ -8,7 +8,7 @@ from starlette import status
 
 from database import get_db
 from database.models.accounts import User
-from database.models.movies import Movie, Certification, Genre, Director
+from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterParams
 from security.account_utils import get_current_user
 
@@ -75,6 +75,12 @@ def apply_movie_filters(stmt, **filters) -> Select:
                 Movie.directors.any(Director.name.ilike(f"%{director}%"))
             )
 
+    stars = filters.get("stars")
+    if stars:
+        star_list = [star.strip() for star in stars.split(",")]
+        for star in star_list:
+            stmt = stmt.filter(Movie.stars.any(Star.name.ilike(f"%{star}%")))
+
     return stmt
 
 
@@ -129,6 +135,7 @@ async def get_movies(
         joinedload(Movie.certification),
         selectinload(Movie.genres),
         selectinload(Movie.directors),
+        selectinload(Movie.stars),
     )
     filter_params = filter_query.model_dump()
     stmt = apply_movie_filters(stmt, **filter_params)
@@ -188,6 +195,7 @@ async def get_movies(
             )
             + (f"genres={filter_query.genres}" if filter_query.genres else "")
             + (f"directors={filter_query.directors}" if filter_query.directors else "")
+            + (f"stars={filter_query.stars}" if filter_query.stars else "")
             if page > 1
             else None
         ),
@@ -224,6 +232,7 @@ async def get_movies(
             )
             + (f"genres={filter_query.genres}" if filter_query.genres else "")
             + (f"directors={filter_query.directors}" if filter_query.directors else "")
+            + (f"stars={filter_query.stars}" if filter_query.stars else "")
             if page < total_pages
             else None
         ),
