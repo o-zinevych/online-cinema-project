@@ -11,7 +11,7 @@ from schemas.examples.movies import (
 class MovieListItemSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
-        json_schema_extra={"examples": movie_list_item_schema_example},
+        json_schema_extra={"examples": [movie_list_item_schema_example]},
     )
 
     id: int
@@ -23,7 +23,7 @@ class MovieListItemSchema(BaseModel):
 class MovieListResponseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
-        json_schema_extra={"examples": movie_list_response_schema_example},
+        json_schema_extra={"examples": [movie_list_response_schema_example]},
     )
 
     movies: List[MovieListItemSchema]
