@@ -75,9 +75,11 @@ async def get_movies(
     year_from = filter_query.year_from
     if year:
         stmt = stmt.filter(Movie.year == year)
-    if year_to:
+    elif year_to and year_from:
+        stmt = stmt.filter(Movie.year.between(year_from, year_to))
+    elif year_to:
         stmt = stmt.filter(Movie.year.__le__(year_to))
-    if year_from:
+    elif year_from:
         stmt = stmt.filter(Movie.year.__ge__(year_from))
 
     shorter_than = filter_query.shorter_than
