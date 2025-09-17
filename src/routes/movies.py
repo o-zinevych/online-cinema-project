@@ -20,6 +20,10 @@ def apply_movie_filters(stmt, **filters) -> Select:
     if name:
         stmt = stmt.filter(Movie.name.ilike(f"%{name}%"))
 
+    description = filters.get("description")
+    if description:
+        stmt = stmt.filter(Movie.description.ilike(f"%{description}%"))
+
     year = filters.get("year")
     year_to = filters.get("year_to")
     year_from = filters.get("year_from")
@@ -124,6 +128,7 @@ async def get_movies(
         prev_page=(
             f"/cinema/movies/?page={page - 1}&per_page={per_page}"
             + (f"&name={filter_query.name}" if filter_query.name else "")
+            + (f"&description={filter_query.description}" if filter_query.description else "")
             + (f"&year={filter_query.year}" if filter_query.year else "")
             + (
                 f"&year_from={filter_query.year_from}"
