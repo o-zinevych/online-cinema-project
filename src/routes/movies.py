@@ -57,10 +57,6 @@ async def get_movies(
     no_movies_exception = HTTPException(
         status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
     )
-    count_result = await db.execute(select(func.count(Movie.id)))
-    total_items = count_result.scalar() or 0
-    if not total_items:
-        raise no_movies_exception
 
     page = filter_query.page
     per_page = filter_query.per_page
@@ -90,6 +86,12 @@ async def get_movies(
         stmt = stmt.filter(Movie.time.__le__(shorter_than))
     elif longer_than:
         stmt = stmt.filter(Movie.time.__ge__(longer_than))
+
+    count_stmt = select(func.count()).select_from(stmt.alias())
+    count_result = await db.execute(count_stmt)
+    total_items = count_result.scalar() or 0
+    if not total_items:
+        raise no_movies_exception
 
     offset = (page - 1) * per_page
     stmt = stmt.limit(per_page).offset(offset)
