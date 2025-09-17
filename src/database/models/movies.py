@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import Optional
-from uuid import UUID as UUID_TYPE
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Integer,
@@ -8,7 +8,7 @@ from sqlalchemy import (
     Table,
     Column,
     ForeignKey,
-    UUID,
+    Uuid,
     Float,
     Text,
     DECIMAL,
@@ -133,7 +133,7 @@ class Movie(Base):
     __tablename__ = "movies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    uuid: Mapped[UUID_TYPE] = mapped_column(UUID, unique=True, nullable=False)
+    uuid: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False, default=uuid4)
     name: Mapped[str] = mapped_column(String(250), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     time: Mapped[int] = mapped_column(Integer, nullable=False)
