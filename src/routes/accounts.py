@@ -691,7 +691,7 @@ async def login_user(
             - 500 Internal Server Error if an error occurred during token creation.
     """
     user = await get_user_by_email(str(login_data.email), db)
-    if not user or user.verify_password(login_data.password):
+    if not user or not user.verify_password(login_data.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
