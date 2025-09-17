@@ -70,3 +70,6 @@ class FilterParams(BaseModel):
     genres: Optional[str] = Field(
         None, min_length=1, description="Filter movies by genres."
     )
+    directors: Optional[str] = Field(
+        None, min_length=1, description="Filter movies by directors."
+    )
