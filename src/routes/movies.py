@@ -83,7 +83,7 @@ async def get_movies(
     Retrieves the list of movies allowing the client to specify the page number and
     the number of items per page. It also calculates the total number of pages and items.
     Provides the links to previous and next pages when applicable.
-    The list can be filtered and searched by all the movie fields.
+    The list can be filtered and searched by the required movie fields.
 
     Args:
         filter_query: The filters to apply to the query.
@@ -128,7 +128,11 @@ async def get_movies(
         prev_page=(
             f"/cinema/movies/?page={page - 1}&per_page={per_page}"
             + (f"&name={filter_query.name}" if filter_query.name else "")
-            + (f"&description={filter_query.description}" if filter_query.description else "")
+            + (
+                f"&description={filter_query.description}"
+                if filter_query.description
+                else ""
+            )
             + (f"&year={filter_query.year}" if filter_query.year else "")
             + (
                 f"&year_from={filter_query.year_from}"
