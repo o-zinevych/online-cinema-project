@@ -3,11 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import select, func, Select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from starlette import status
 
 from database import get_db
 from database.models.accounts import User
-from database.models.movies import Movie
+from database.models.movies import Movie, Certification
 from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterParams
 from security.account_utils import get_current_user
 
@@ -53,6 +54,12 @@ def apply_movie_filters(stmt, **filters) -> Select:
         stmt = stmt.filter(Movie.imdb.__ge__(imdb_from))
     elif imdb_to:
         stmt = stmt.filter(Movie.imdb.__le__(imdb_to))
+
+    certification = filters.get("certification")
+    if certification:
+        stmt = stmt.filter(
+            Movie.certification.has(Certification.name.ilike(certification))
+        )
 
     return stmt
 
@@ -104,7 +111,7 @@ async def get_movies(
     page = filter_query.page
     per_page = filter_query.per_page
 
-    stmt = select(Movie)
+    stmt = select(Movie).options(joinedload(Movie.certification))
     filter_params = filter_query.model_dump()
     stmt = apply_movie_filters(stmt, **filter_params)
 
@@ -156,6 +163,11 @@ async def get_movies(
             )
             + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
             + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
+            + (
+                f"certification={filter_query.certification}"
+                if filter_query.certification
+                else ""
+            )
             if page > 1
             else None
         ),
@@ -185,6 +197,11 @@ async def get_movies(
             )
             + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
             + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
+            + (
+                f"certification={filter_query.certification}"
+                if filter_query.certification
+                else ""
+            )
             if page < total_pages
             else None
         ),
