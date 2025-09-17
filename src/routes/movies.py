@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +8,7 @@ from starlette import status
 from database import get_db
 from database.models.accounts import User
 from database.models.movies import Movie
-from schemas.movies import MovieListResponseSchema, MovieListItemSchema
+from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterParams
 from security.account_utils import get_current_user
 
 router = APIRouter()
@@ -28,8 +30,7 @@ router = APIRouter()
     },
 )
 async def get_movies(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1, le=100),
+    filter_query: Annotated[FilterParams, Query()],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MovieListResponseSchema:
@@ -41,8 +42,7 @@ async def get_movies(
     Provides the links to previous and next pages when applicable.
 
     Args:
-        page (int): Page number (must be >= 1).
-        per_page (int): Number of items per page (must be between 1 and 100).
+        filter_query: The filters to apply to the query.
         db (AsyncSession): Asynchronous database session.
         current_user (User): The authenticated user.
 
@@ -60,6 +60,10 @@ async def get_movies(
     total_items = count_result.scalar() or 0
     if not total_items:
         raise no_movies_exception
+
+    page = filter_query.page
+    per_page = filter_query.per_page
+
     offset = (page - 1) * per_page
     movie_result = await db.execute(select(Movie).limit(per_page).offset(offset))
     movies = movie_result.scalars().all()

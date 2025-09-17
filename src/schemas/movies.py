@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.examples.movies import (
     movie_list_item_schema_example,
@@ -31,3 +31,8 @@ class MovieListResponseSchema(BaseModel):
     next_page: Optional[str]
     total_pages: int
     total_items: int
+
+
+class FilterParams(BaseModel):
+    page: int = Field(1, ge=1)
+    per_page: int = Field(10, ge=1, le=100)
