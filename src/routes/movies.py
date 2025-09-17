@@ -105,10 +105,24 @@ async def get_movies(
     return MovieListResponseSchema(
         movies=movie_list,
         prev_page=(
-            f"/cinema/movies/?page={page - 1}&per_page={per_page}" if page > 1 else None
+            f"/cinema/movies/?page={page - 1}&per_page={per_page}"
+            + (f"&name={name}" if name else "")
+            + (f"&year={year}" if year else "")
+            + (f"&year_from={year_from}" if year_from and not year else "")
+            + (f"&year_to={year_to}" if year_to and not year else "")
+            + (f"&longer_than={longer_than}" if longer_than else "")
+            + (f"&shorter_than={shorter_than}" if shorter_than else "")
+            if page > 1
+            else None
         ),
         next_page=(
             f"/cinema/movies/?page={page + 1}&per_page={per_page}"
+            + (f"&name={name}" if name else "")
+            + (f"&year={year}" if year else "")
+            + (f"&year_from={year_from}" if year_from and not year else "")
+            + (f"&year_to={year_to}" if year_to and not year else "")
+            + (f"&longer_than={longer_than}" if longer_than else "")
+            + (f"&shorter_than={shorter_than}" if shorter_than else "")
             if page < total_pages
             else None
         ),
