@@ -12,7 +12,7 @@ class JWTAuthManager(JWTAuthManagerInterface):
     A manager for creating and decoding JWT access and refresh tokens.
     """
 
-    _ACCESS_KEY_TIMEDELTA_MINUTES = 60
+    _ACCESS_KEY_TIMEDELTA_MINUTES = 60 * 25
     _REFRESH_KEY_TIMEDELTA_MINUTES = 60 * 24 * 7
 
     def __init__(
