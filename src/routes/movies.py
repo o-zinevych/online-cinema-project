@@ -9,7 +9,12 @@ from starlette import status
 from database import get_db
 from database.models.accounts import User
 from database.models.movies import Movie, Certification, Genre, Director, Star
-from schemas.movies import MovieListResponseSchema, MovieListItemSchema, FilterParams
+from schemas.movies import (
+    MovieListResponseSchema,
+    MovieListItemSchema,
+    FilterParams,
+    MovieDetailSchema,
+)
 from security.account_utils import get_current_user
 
 router = APIRouter()
@@ -92,6 +97,19 @@ def apply_movie_filters(stmt, **filters) -> Select:
         stmt = stmt.order_by(desc(Movie.imdb))
 
     return stmt
+
+
+def get_movie_by_id_stmt(movie_id: int) -> Select:
+    return (
+        select(Movie)
+        .options(
+            joinedload(Movie.certification),
+            selectinload(Movie.genres),
+            selectinload(Movie.directors),
+            selectinload(Movie.stars),
+        )
+        .where(Movie.id == movie_id)
+    )
 
 
 @router.get(
@@ -251,3 +269,50 @@ async def get_movies(
         total_pages=total_pages,
         total_items=total_items,
     )
+
+
+@router.get(
+    "/movies/{movie_id}/",
+    response_model=MovieDetailSchema,
+    summary="Movie Detail",
+    description="Get movie details by movie id.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        }
+    },
+)
+async def get_movie_by_id(
+    movie_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MovieDetailSchema:
+    """
+    Movie detail endpoint.
+
+    Retrieves the movie by the given id, including all its details.
+
+    Args:
+        movie_id (int): ID of the movie to retrieve.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieDetailResponseSchema: Movie detail response.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID was not found.
+    """
+    stmt = get_movie_by_id_stmt(movie_id)
+    result = await db.execute(stmt)
+    movie_record = result.scalar_one_or_none()
+    if not movie_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
+        )
+    return MovieDetailSchema.model_validate(movie_record)
