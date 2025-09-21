@@ -1,11 +1,35 @@
+from decimal import Decimal
 from typing import List, Optional, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.examples.movies import (
     movie_list_item_schema_example,
     movie_list_response_schema_example,
+    movie_detail_response_schema_example,
 )
+
+
+class BaseNameSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    name: str
+
+
+class GenreSchema(BaseNameSchema):
+    pass
+
+
+class StarSchema(BaseNameSchema):
+    pass
+
+
+class DirectorSchema(BaseNameSchema):
+    pass
+
+
+class CertificationSchema(BaseNameSchema):
+    pass
 
 
 class MovieListItemSchema(BaseModel):
@@ -77,3 +101,26 @@ class FilterParams(BaseModel):
     stars: Optional[str] = Field(
         None, min_length=1, description="Filter movies by actors."
     )
+
+
+class MovieDetailSchema(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [movie_detail_response_schema_example]},
+    )
+
+    id: int
+    uuid: UUID
+    name: str
+    year: int
+    time: int
+    imdb: float
+    votes: int
+    meta_score: Optional[float]
+    gross: Optional[float]
+    description: str
+    price: Optional[Decimal]
+    certification: CertificationSchema
+    genres: List[GenreSchema]
+    directors: List[DirectorSchema]
+    stars: List[StarSchema]
