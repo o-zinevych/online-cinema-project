@@ -24,6 +24,8 @@ from schemas.movies import (
     MovieReactionRequestSchema,
     CommentCreateResponseSchema,
     CommentCreateSchema,
+    CommentUpdateResponseSchema,
+    CommentUpdateSchema,
 )
 from security.account_utils import get_current_user
 
@@ -34,6 +36,17 @@ no_movies_exception = HTTPException(
 )
 movie_not_found_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
+)
+comment_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found."
+)
+comment_under_wrong_movie_exception = HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="This comment does not belong to this movie.",
+)
+comment_not_own_exception = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="You are not the creator of this comment.",
 )
 
 
@@ -512,3 +525,101 @@ async def create_comment(
             detail="An error occurred when creating the comment.",
         )
     return CommentCreateResponseSchema.model_validate(new_comment)
+
+
+@router.put(
+    "/movies/{movie_id}/comments/{comment_id}/",
+    response_model=CommentUpdateResponseSchema,
+    summary="Update a Comment",
+    description="Update your comment under a specific movie.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Comment does not match the movie.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This comment does not belong to this movie."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - User is not the owner of the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You are not the creator of this comment."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Comment with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during comment update.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when updating the comment."
+                    }
+                }
+            },
+        },
+    },
+)
+async def update_own_comment(
+    movie_id: int,
+    comment_id: int,
+    comment_update: CommentUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentUpdateResponseSchema:
+    """
+    Comment update endpoint.
+
+    Updates current user's comment by given comment and movie ID.
+    Checks that the current user is the comment's creator and raises
+    an HTTP 403 error if not.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to update.
+        comment_update (CommentUpdateSchema): The user's updated comment.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentUpdateResponseSchema: Comment details including its ID, comment itself,
+        the user ID and time of update.
+
+    Raises:
+        HTTPException:
+            - 400 if the comment is under the given movie.
+            - 403 if the comment does not belong to the user.
+            - 404 if the comment was not found.
+            - 500 if an error occurred during comment update.
+    """
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
+    comment_result = await db.execute(comment_stmt)
+    comment_to_update = comment_result.scalar_one_or_none()
+    if not comment_to_update:
+        raise comment_not_found_exception
+
+    if comment_to_update.movie_id != movie_id:
+        raise comment_under_wrong_movie_exception
+    if comment_to_update.user_id != current_user.id:
+        raise comment_not_own_exception
+
+    try:
+        comment_to_update.comment = comment_update.comment
+        await db.flush()
+        await db.commit()
+        await db.refresh(comment_to_update)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the comment.",
+        )
+    return CommentUpdateResponseSchema.model_validate(comment_to_update)
