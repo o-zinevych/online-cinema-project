@@ -19,6 +19,13 @@ from security.account_utils import get_current_user
 
 router = APIRouter()
 
+no_movies_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
+)
+movie_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
+)
+
 
 def apply_movie_filters(stmt, **filters) -> Select:
     """Applies the filters and ordering from the given dictionary to the base query."""
@@ -155,9 +162,6 @@ async def get_movies(
         HTTPException:
             - 404 if no movies are found.
     """
-    no_movies_exception = HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
-    )
 
     page = filter_query.page
     per_page = filter_query.per_page
@@ -313,7 +317,5 @@ async def get_movie_by_id(
     result = await db.execute(stmt)
     movie_record = result.scalar_one_or_none()
     if not movie_record:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
-        )
+        raise movie_not_found_exception
     return MovieDetailSchema.model_validate(movie_record)
