@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional, Literal
 from uuid import UUID
@@ -133,3 +134,19 @@ class MovieDetailSchema(BaseModel):
 
 class MovieReactionRequestSchema(BaseModel):
     reaction: MovieReactionEnum
+
+
+class CommentCreateSchema(BaseModel):
+    comment: str = Field(min_length=1, max_length=250)
+
+
+class BaseCommentResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    comment: str
+    user_id: int
+
+
+class CommentCreateResponseSchema(BaseCommentResponseSchema):
+    created_at: datetime
