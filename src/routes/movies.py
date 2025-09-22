@@ -107,6 +107,7 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
             selectinload(Movie.genres),
             selectinload(Movie.directors),
             selectinload(Movie.stars),
+            selectinload(Movie.user_reactions),
         )
         .where(Movie.id == movie_id)
     )

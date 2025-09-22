@@ -124,3 +124,6 @@ class MovieDetailSchema(BaseModel):
     genres: List[GenreSchema]
     directors: List[DirectorSchema]
     stars: List[StarSchema]
+
+    likes_count: int
+    dislikes_count: int
