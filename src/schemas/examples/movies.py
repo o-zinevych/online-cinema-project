@@ -37,4 +37,7 @@ movie_detail_response_schema_example = {
     "genres": [genre_schema_example],
     "directors": [director_schema_example],
     "stars": [star_schema_example],
+    "likes_count": 35_000,
+    "dislikes_count": 5_000,
+    "comments_count": 535,
 }
