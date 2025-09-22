@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from database.models.accounts import MovieReactionEnum
 from schemas.examples.movies import (
     movie_list_item_schema_example,
     movie_list_response_schema_example,
@@ -127,3 +128,7 @@ class MovieDetailSchema(BaseModel):
 
     likes_count: int
     dislikes_count: int
+
+
+class MovieReactionRequestSchema(BaseModel):
+    reaction: MovieReactionEnum
