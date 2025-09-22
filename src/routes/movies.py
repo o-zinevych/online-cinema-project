@@ -56,6 +56,16 @@ comment_not_own_exception = HTTPException(
 )
 
 
+def count_offset(page: int, per_page: int) -> int:
+    """Counts the offset for pagination based on current page and per_page."""
+    return (page - 1) * per_page
+
+
+def count_total_pages(total_items: int, per_page: int) -> int:
+    """Counts the total pages number for pagination based on items total and per_page."""
+    return (total_items + per_page - 1) // per_page
+
+
 def apply_movie_filters(stmt, **filters) -> Select:
     """Applies the filters and ordering from the given dictionary to the base query."""
     name = filters.get("name")
@@ -211,7 +221,7 @@ async def get_movies(
     if not total_items:
         raise no_movies_exception
 
-    offset = (page - 1) * per_page
+    offset = count_offset(page, per_page)
     stmt = stmt.limit(per_page).offset(offset)
     movie_result = await db.execute(stmt)
     movies = movie_result.scalars().all()
@@ -219,7 +229,7 @@ async def get_movies(
         raise no_movies_exception
 
     movie_list = [MovieListItemSchema.model_validate(movie) for movie in movies]
-    total_pages = (total_items + per_page - 1) // per_page
+    total_pages = count_total_pages(total_items, per_page)
     return MovieListResponseSchema(
         movies=movie_list,
         prev_page=(
@@ -596,7 +606,7 @@ async def get_comments(
     if not total_items:
         raise no_comments_exception
 
-    offset = (page - 1) * per_page
+    offset = count_offset(page, per_page)
     comment_stmt = select(UserMovieComment).limit(per_page).offset(offset)
     comment_result = await db.execute(comment_stmt)
     comments = comment_result.scalars().all()
@@ -606,7 +616,7 @@ async def get_comments(
     comment_list = [
         CommentListItemSchema.model_validate(comment) for comment in comments
     ]
-    total_pages = (total_items + per_page - 1) // per_page
+    total_pages = count_total_pages(total_items, per_page)
     return CommentListResponseSchema(
         comments=comment_list,
         prev_page=(
