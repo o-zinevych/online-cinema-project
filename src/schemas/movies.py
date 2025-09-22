@@ -162,3 +162,18 @@ class CommentCreateResponseSchema(BaseCommentResponseSchema):
 
 class CommentUpdateResponseSchema(BaseCommentResponseSchema):
     updated_at: datetime
+
+
+class CommentListItemSchema(BaseCommentResponseSchema):
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommentListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    comments: List[CommentListItemSchema]
+    prev_page: Optional[str]
+    next_page: Optional[str]
+    total_pages: int
+    total_items: int
