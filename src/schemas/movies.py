@@ -128,6 +128,7 @@ class MovieDetailSchema(BaseModel):
 
     likes_count: int
     dislikes_count: int
+    comments_count: int
 
 
 class MovieReactionRequestSchema(BaseModel):

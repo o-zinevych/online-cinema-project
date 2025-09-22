@@ -165,6 +165,9 @@ class Movie(Base):
     user_reactions: Mapped[list["UserMovieReaction"]] = relationship(
         "UserMovieReaction", back_populates="movie", cascade="all, delete-orphan"
     )
+    user_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", back_populates="movie", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -183,6 +186,10 @@ class Movie(Base):
         return sum(
             1 for r in self.user_reactions if r.reaction == MovieReactionEnum.DISLIKE
         )
+
+    @property
+    def comments_count(self) -> int:
+        return len(self.user_comments)
 
     def __repr__(self) -> str:
         return f"Movie(name={self.name}, year={self.year}, imdb_score={self.imdb})"

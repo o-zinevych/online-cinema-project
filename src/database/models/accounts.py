@@ -42,7 +42,7 @@ class MovieReactionEnum(str, enum.Enum):
 
 
 class UserMovieReaction(Base):
-    __tablename__ = "user_reactions"
+    __tablename__ = "user_movie_reactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -64,6 +64,34 @@ class UserMovieReaction(Base):
 
     def __repr__(self) -> str:
         return f"UserMovieReaction(user_id={self.user_id}, movie_id={self.movie_id}, reaction={self.reaction})"
+
+
+class UserMovieComment(Base):
+    __tablename__ = "user_movie_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), nullable=False
+    )
+    comment: Mapped[str] = mapped_column(String(250), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="movie_comments")
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_comments")
+
+    def __repr__(self) -> str:
+        return f"UserMovieComment(user_id={self.user_id}, movie_id={self.movie_id}, comment={self.comment})"
 
 
 class UserGroup(Base):
@@ -119,8 +147,12 @@ class User(Base):
     refresh_token: Mapped["RefreshToken"] = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
+
     movie_reactions: Mapped[list["UserMovieReaction"]] = relationship(
         "UserMovieReaction", back_populates="user", cascade="all, delete-orphan"
+    )
+    movie_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", back_populates="user", cascade="all, delete-orphan"
     )
 
     @classmethod
