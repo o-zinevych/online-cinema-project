@@ -16,6 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from database.models.accounts import MovieReactionEnum
 from database.models.base import Base
 
 
@@ -161,11 +162,27 @@ class Movie(Base):
         "Star", secondary=MovieStarsModel, back_populates="movies"
     )
 
+    user_reactions: Mapped[list["UserMovieReaction"]] = relationship(
+        "UserMovieReaction", back_populates="movie", cascade="all, delete-orphan"
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "name", "year", "time", name="movie_name_year_time_constraint"
         ),
     )
+
+    @property
+    def likes_count(self) -> int:
+        return sum(
+            1 for r in self.user_reactions if r.reaction == MovieReactionEnum.LIKE
+        )
+
+    @property
+    def dislikes_count(self) -> int:
+        return sum(
+            1 for r in self.user_reactions if r.reaction == MovieReactionEnum.DISLIKE
+        )
 
     def __repr__(self) -> str:
         return f"Movie(name={self.name}, year={self.year}, imdb_score={self.imdb})"

@@ -36,6 +36,37 @@ class GenderEnum(str, enum.Enum):
     WOMAN = "woman"
 
 
+class MovieReactionEnum(str, enum.Enum):
+    LIKE = "like"
+    DISLIKE = "dislike"
+
+
+class UserMovieReaction(Base):
+    __tablename__ = "user_reactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), nullable=False
+    )
+    reaction: Mapped[MovieReactionEnum] = mapped_column(
+        Enum(MovieReactionEnum), nullable=False
+    )
+
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_reactions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "movie_id", name="user_movie_reaction_unique"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"UserMovieReaction(user_id={self.user_id}, movie_id={self.movie_id}, reaction={self.reaction})"
+
+
 class UserGroup(Base):
     __tablename__ = "user_groups"
 
