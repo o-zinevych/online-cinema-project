@@ -8,7 +8,12 @@ from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
 from database import get_db
-from database.models.accounts import User, UserMovieReaction, MovieReactionEnum
+from database.models.accounts import (
+    User,
+    UserMovieReaction,
+    MovieReactionEnum,
+    UserMovieComment,
+)
 from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.common import MessageResponseSchema
 from schemas.movies import (
@@ -17,6 +22,8 @@ from schemas.movies import (
     FilterParams,
     MovieDetailSchema,
     MovieReactionRequestSchema,
+    CommentCreateResponseSchema,
+    CommentCreateSchema,
 )
 from security.account_utils import get_current_user
 
@@ -432,3 +439,76 @@ async def leave_movie_reaction(
     except SQLAlchemyError:
         await db.rollback()
         raise reaction_db_exception
+
+
+@router.post(
+    "/movies/{movie_id}/comments/",
+    response_model=CommentCreateResponseSchema,
+    summary="Create a Comment",
+    description="Create a comment under a specific movie.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during comment creation.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when creating the comment."
+                    }
+                }
+            },
+        },
+    },
+)
+async def create_comment(
+    movie_id: int,
+    comment_data: CommentCreateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentCreateResponseSchema:
+    """
+    Comment creation endpoint.
+
+    Creates a comment under 250 characters by current user for the given movie.
+
+    Args:
+        movie_id (int): ID of the movie to comment on.
+        comment_data (CommentCreateSchema): The user's comment.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentCreateResponseSchema: Comment details including its ID, comment itself,
+        the user ID and time of creation.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during comment creation.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    try:
+        new_comment = UserMovieComment(
+            user_id=current_user.id, movie_id=movie_id, comment=comment_data.comment
+        )
+        db.add(new_comment)
+        await db.commit()
+        await db.refresh(new_comment)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the comment.",
+        )
+    return CommentCreateResponseSchema.model_validate(new_comment)
