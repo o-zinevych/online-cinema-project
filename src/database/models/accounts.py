@@ -55,12 +55,11 @@ class UserMovieReaction(Base):
         Enum(MovieReactionEnum), nullable=False
     )
 
+    user: Mapped["User"] = relationship("User", back_populates="movie_reactions")
     movie: Mapped["Movie"] = relationship("Movie", back_populates="user_reactions")
 
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "movie_id", name="user_movie_reaction_unique"
-        ),
+        UniqueConstraint("user_id", "movie_id", name="user_movie_reaction_unique"),
     )
 
     def __repr__(self) -> str:
@@ -119,6 +118,9 @@ class User(Base):
     )
     refresh_token: Mapped["RefreshToken"] = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    movie_reactions: Mapped[list["UserMovieReaction"]] = relationship(
+        "UserMovieReaction", back_populates="user", cascade="all, delete-orphan"
     )
 
     @classmethod
