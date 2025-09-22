@@ -136,8 +136,16 @@ class MovieReactionRequestSchema(BaseModel):
     reaction: MovieReactionEnum
 
 
-class CommentCreateSchema(BaseModel):
+class BaseCommentSchema(BaseModel):
     comment: str = Field(min_length=1, max_length=250)
+
+
+class CommentCreateSchema(BaseCommentSchema):
+    pass
+
+
+class CommentUpdateSchema(BaseCommentSchema):
+    pass
 
 
 class BaseCommentResponseSchema(BaseModel):
@@ -150,3 +158,7 @@ class BaseCommentResponseSchema(BaseModel):
 
 class CommentCreateResponseSchema(BaseCommentResponseSchema):
     created_at: datetime
+
+
+class CommentUpdateResponseSchema(BaseCommentResponseSchema):
+    updated_at: datetime
