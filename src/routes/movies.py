@@ -26,6 +26,8 @@ from schemas.movies import (
     CommentCreateSchema,
     CommentUpdateResponseSchema,
     CommentUpdateSchema,
+    CommentListResponseSchema,
+    CommentListItemSchema,
 )
 from security.account_utils import get_current_user
 
@@ -37,8 +39,12 @@ no_movies_exception = HTTPException(
 movie_not_found_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
 )
+
 comment_not_found_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found."
+)
+no_comments_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="No comments found."
 )
 comment_under_wrong_movie_exception = HTTPException(
     status_code=status.HTTP_400_BAD_REQUEST,
@@ -525,6 +531,97 @@ async def create_comment(
             detail="An error occurred when creating the comment.",
         )
     return CommentCreateResponseSchema.model_validate(new_comment)
+
+
+@router.get(
+    "/movies/{movie_id}/comments/",
+    response_model=CommentListResponseSchema,
+    summary="Movie Comment List",
+    description="Get a paginated list of comments for a specific movie.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_not_found": {
+                            "summary": "Movie Not Found",
+                            "value": {"detail": "Movie not found."},
+                        },
+                        "comments_not_found": {
+                            "summary": "Comments Not Found",
+                            "value": {"detail": "No comments found."},
+                        },
+                    }
+                },
+            },
+        },
+    },
+)
+async def get_comments(
+    movie_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5, ge=1, le=10),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentListResponseSchema:
+    """
+    Comment list endpoint.
+
+    Retrieves a list of comments for a specific movie with pagination.
+    The client can specify a page number and the amount of comments per page in query.
+
+    Args:
+        movie_id (int): ID of the movie to retrieve comments for.
+        page (int): Page number from the query.
+        per_page (int): Number of comments per page.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentListResponseSchema: List of comments for a specific movie.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID or comments were not found.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    total_items = movie.comments_count
+    if not total_items:
+        raise no_comments_exception
+
+    offset = (page - 1) * per_page
+    comment_stmt = select(UserMovieComment).limit(per_page).offset(offset)
+    comment_result = await db.execute(comment_stmt)
+    comments = comment_result.scalars().all()
+    if not comments:
+        raise no_comments_exception
+
+    comment_list = [
+        CommentListItemSchema.model_validate(comment) for comment in comments
+    ]
+    total_pages = (total_items + per_page - 1) // per_page
+    return CommentListResponseSchema(
+        comments=comment_list,
+        prev_page=(
+            f"/cinema/movies/{movie_id}/comments/?page={page - 1}&per_page={per_page}"
+            if page > 1
+            else None
+        ),
+        next_page=(
+            f"/cinema/movies/{movie_id}/comments/?page={page + 1}&per_page={per_page}"
+            if page < total_pages
+            else None
+        ),
+        total_pages=total_pages,
+        total_items=total_items,
+    )
 
 
 @router.put(
