@@ -72,10 +72,6 @@ class UserLoginResponseSchema(BaseModel):
     token_type: str = "bearer"
 
 
-class MessageResponseSchema(BaseModel):
-    message: str
-
-
 class TokenRefreshRequestSchema(BaseModel):
     refresh_token: str
 
