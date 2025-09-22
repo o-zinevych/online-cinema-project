@@ -2,18 +2,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy import select, func, Select, desc
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
 from database import get_db
-from database.models.accounts import User
+from database.models.accounts import User, UserMovieReaction, MovieReactionEnum
 from database.models.movies import Movie, Certification, Genre, Director, Star
+from schemas.common import MessageResponseSchema
 from schemas.movies import (
     MovieListResponseSchema,
     MovieListItemSchema,
     FilterParams,
     MovieDetailSchema,
+    MovieReactionRequestSchema,
 )
 from security.account_utils import get_current_user
 
@@ -319,3 +322,112 @@ async def get_movie_by_id(
     if not movie_record:
         raise movie_not_found_exception
     return MovieDetailSchema.model_validate(movie_record)
+
+
+@router.post(
+    "/movies/{movie_id}/react/",
+    response_model=MessageResponseSchema,
+    summary="Leave a Movie Reaction",
+    description="Leave a like or dislike on a movie.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request- The same reaction already exists.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You cannot leave the same reaction twice."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred when updating/creating a reaction.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when leaving a reaction."}
+                }
+            },
+        },
+    },
+)
+async def leave_movie_reaction(
+    movie_id: int,
+    reaction_data: MovieReactionRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Movie reaction endpoint.
+
+    Allows users to leave a reaction (like or dislike) on the specified movie.
+    Raises an error if the same reaction exists already and changes it if it is different.
+
+    Args:
+        movie_id (int): ID of the movie to react to.
+        reaction_data (MovieReactionRequestSchema): Information about the reaction.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message about successful reaction creation/update.
+
+    Raises:
+        HTTPException:
+            - 400 if the user tries to leave the same reaction again.
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred when updating or creating a reaction.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    reaction_stmt = select(UserMovieReaction).where(
+        UserMovieReaction.movie_id == movie_id,
+        UserMovieReaction.user_id == current_user.id,
+    )
+    reaction_result = await db.execute(reaction_stmt)
+    db_reaction = reaction_result.scalar_one_or_none()
+    user_reaction = reaction_data.reaction
+    if db_reaction and db_reaction.reaction == user_reaction:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot leave the same reaction twice.",
+        )
+
+    reaction_db_exception = HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="An error occurred when leaving a reaction.",
+    )
+
+    if db_reaction and db_reaction.reaction != user_reaction:
+        try:
+            db_reaction.reaction = user_reaction
+            await db.commit()
+            if user_reaction == MovieReactionEnum.LIKE:
+                return MessageResponseSchema(message="Movie liked successfully.")
+            return MessageResponseSchema(message="Movie disliked successfully.")
+        except SQLAlchemyError:
+            await db.rollback()
+            raise reaction_db_exception
+
+    try:
+        new_reaction = UserMovieReaction(
+            user_id=current_user.id, movie_id=movie_id, reaction=user_reaction
+        )
+        db.add(new_reaction)
+        await db.flush()
+        await db.commit()
+        await db.refresh(new_reaction)
+        if user_reaction == MovieReactionEnum.LIKE:
+            return MessageResponseSchema(message="Movie liked successfully.")
+        return MessageResponseSchema(message="Movie disliked successfully.")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise reaction_db_exception
