@@ -13,6 +13,8 @@ from sqlalchemy import (
     Date,
     Text,
     UniqueConstraint,
+    Table,
+    Column,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
@@ -22,6 +24,24 @@ from security.password_utils import (
     hash_password,
     generate_secure_token,
     verify_password,
+)
+
+
+UserMovieFavoritesModel = Table(
+    "user_movie_favorites",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "movie_id",
+        ForeignKey("movies.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
 )
 
 
@@ -153,6 +173,9 @@ class User(Base):
     )
     movie_comments: Mapped[list["UserMovieComment"]] = relationship(
         "UserMovieComment", back_populates="user", cascade="all, delete-orphan"
+    )
+    favorite_movies: Mapped[list["Movie"]] = relationship(
+        "Movie", secondary=UserMovieFavoritesModel, back_populates="favorited_by_users"
     )
 
     @classmethod
