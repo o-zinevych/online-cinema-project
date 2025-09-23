@@ -702,7 +702,7 @@ async def update_own_comment(
 
     Raises:
         HTTPException:
-            - 400 if the comment is under the given movie.
+            - 400 if the comment is not under the given movie.
             - 403 if the comment does not belong to the user.
             - 404 if the comment was not found.
             - 500 if an error occurred during comment update.
@@ -730,3 +730,90 @@ async def update_own_comment(
             detail="An error occurred when updating the comment.",
         )
     return CommentUpdateResponseSchema.model_validate(comment_to_update)
+
+
+@router.delete(
+    "/movies/{movie_id}/comments/{comment_id}/",
+    summary="Delete a Comment",
+    description="Delete your comment by given ID.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        400: {
+            "description": "Bad Request - Comment does not match the movie.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This comment does not belong to this movie."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - User is not the owner of the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You are not the creator of this comment."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Comment with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during comment deletion.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when deleting the comment."
+                    }
+                }
+            },
+        },
+    },
+)
+async def delete_own_comment(
+    movie_id: int,
+    comment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Comment deletion endpoint.
+
+    Deletes a comment with the given ID after checking that the current user is
+    the owner of the comment and it is under the right movie.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to update.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 400 if the comment is not under the given movie.
+            - 403 if the comment does not belong to the user.
+            - 404 if the comment was not found.
+            - 500 if an error occurred during comment deletion.
+    """
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
+    comment_result = await db.execute(comment_stmt)
+    comment_to_delete = comment_result.scalar_one_or_none()
+    if not comment_to_delete:
+        raise comment_not_found_exception
+
+    if comment_to_delete.movie_id != movie_id:
+        raise comment_under_wrong_movie_exception
+    if comment_to_delete.user_id != current_user.id:
+        raise comment_not_own_exception
+
+    try:
+        await db.delete(comment_to_delete)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the comment.",
+        )
