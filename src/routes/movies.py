@@ -155,6 +155,7 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
             selectinload(Movie.stars),
             selectinload(Movie.user_reactions),
             selectinload(Movie.user_comments),
+            selectinload(Movie.favorited_by_users),
         )
         .where(Movie.id == movie_id)
     )
@@ -816,4 +817,85 @@ async def delete_own_comment(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when deleting the comment.",
+        )
+
+
+@router.post(
+    "/movies/{movie_id}/favorite/",
+    response_model=MessageResponseSchema,
+    summary="Add Movie to Favorites",
+    description="Add the specified movie to the list of favorites.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - The movie is already in favorites list.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie already favorite."}}
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during addition "
+            "of the movie to favorites.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "detail": "An error occurred when adding the movie to favorites."
+                    }
+                }
+            },
+        },
+    },
+)
+async def add_movie_to_favorites(
+    movie_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Favorite movie addition endpoint.
+
+    Marks the given movie as favorite provided it is not favorite yet.
+    Checks the user's favorite movies list to verify that.
+
+    Args:
+        movie_id (int): ID of the movie to make favorite.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message informing the client of successful
+        addition of the movie to favorites.
+
+    Raises:
+        HTTPException:
+            - 400 if the movie is already favorite.
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during addition of the movie to favorites.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    if current_user in movie.favorited_by_users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Movie already favorite."
+        )
+
+    try:
+        movie.favorited_by_users.append(current_user)
+        await db.commit()
+        return MessageResponseSchema(message="Movie added to favorites successfully.")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when adding the movie to favorites.",
         )
