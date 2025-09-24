@@ -22,6 +22,15 @@ class GenreSchema(BaseNameSchema):
     pass
 
 
+class GenreListItemSchema(GenreSchema):
+    movie_count: int
+
+
+class GenreListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    genres: List[GenreListItemSchema]
+
+
 class StarSchema(BaseNameSchema):
     pass
 
