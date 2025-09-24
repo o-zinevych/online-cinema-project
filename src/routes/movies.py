@@ -1069,7 +1069,18 @@ async def delete_own_comment(
         404: {
             "description": "Not Found - No genres were found.",
             "content": {
-                "application/json": {"example": {"detail": "No genres found."}}
+                "application/json": {
+                    "examples": {
+                        "no_genre": {
+                            "summary": "Genre Not Found",
+                            "value": {"detail": "No genres found."},
+                        },
+                        "no_movies": {
+                            "summary": "Movies Not Found",
+                            "value": {"detail": "No movies found."},
+                        },
+                    }
+                }
             },
         }
     },
@@ -1101,3 +1112,63 @@ async def get_genres(
         )
     genres_list = [GenreListItemSchema.model_validate(genre) for genre in genres]
     return GenreListResponseSchema(genres=genres_list)
+
+
+@router.get(
+    "/genres/{genre_id}/",
+    response_model=MovieListResponseSchema,
+    summary="Movie List by Genre",
+    description="Get a list of all movies with the given genre.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - Genre with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre not found."}}
+            },
+        }
+    },
+)
+async def get_movies_by_genre(
+    genre_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MovieListResponseSchema:
+    """
+    Detail genre endpoint with its movie list.
+
+    Gets a list of movies belonging to the specified genre.
+
+    Args:
+        genre_id (int): The ID of the genre.
+        page (int, optional): Page number of the page.
+        per_page (int, optional): Number of items per page.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieListResponseSchema: List of movies with this genre.
+
+    Raises:
+        HTTPException:
+            - 404 if the given genre or movies were not found.
+    """
+    genre_stmt = (
+        select(Genre).options(selectinload(Genre.movies)).where(Genre.id == genre_id)
+    )
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if not genre:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found."
+        )
+
+    filter_query = FilterParams(page=page, per_page=per_page, genres=genre.name)
+    movies = await get_paginated_movies(
+        filter_query=filter_query,
+        base_url=f"/genres/{genre_id}/",
+        db=db,
+    )
+    return MovieListResponseSchema(**movies)
