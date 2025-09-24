@@ -207,16 +207,16 @@ def add_filters_to_movie_list_page_links(
             if filter_query.shorter_than
             else ""
         )
-        + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
-        + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
+        + (f"&imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
+        + (f"&imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
         + (
-            f"certification={filter_query.certification}"
+            f"&certification={filter_query.certification}"
             if filter_query.certification
             else ""
         )
-        + (f"genres={filter_query.genres}" if filter_query.genres else "")
-        + (f"directors={filter_query.directors}" if filter_query.directors else "")
-        + (f"stars={filter_query.stars}" if filter_query.stars else "")
+        + (f"&genres={filter_query.genres}" if filter_query.genres else "")
+        + (f"&directors={filter_query.directors}" if filter_query.directors else "")
+        + (f"&stars={filter_query.stars}" if filter_query.stars else "")
     )
 
 
