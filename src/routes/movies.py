@@ -292,6 +292,23 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
     )
 
 
+async def get_and_check_comment(
+    comment_id: int, movie_id: int, user_id: int, db: AsyncSession = Depends(get_db)
+) -> UserMovieComment:
+    """Retrieves and checks a comment's existence, movie ID and owner."""
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
+    comment_result = await db.execute(comment_stmt)
+    comment = comment_result.scalar_one_or_none()
+    if not comment:
+        raise comment_not_found_exception
+
+    if comment.movie_id != movie_id:
+        raise comment_under_wrong_movie_exception
+    if comment.user_id != user_id:
+        raise comment_not_own_exception
+    return comment
+
+
 @router.get(
     "/movies/",
     response_model=MovieListResponseSchema,
@@ -864,16 +881,9 @@ async def update_own_comment(
             - 404 if the comment was not found.
             - 500 if an error occurred during comment update.
     """
-    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
-    comment_result = await db.execute(comment_stmt)
-    comment_to_update = comment_result.scalar_one_or_none()
-    if not comment_to_update:
-        raise comment_not_found_exception
-
-    if comment_to_update.movie_id != movie_id:
-        raise comment_under_wrong_movie_exception
-    if comment_to_update.user_id != current_user.id:
-        raise comment_not_own_exception
+    comment_to_update = await get_and_check_comment(
+        comment_id=comment_id, movie_id=movie_id, user_id=current_user.id, db=db
+    )
 
     try:
         comment_to_update.comment = comment_update.comment
@@ -954,16 +964,9 @@ async def delete_own_comment(
             - 404 if the comment was not found.
             - 500 if an error occurred during comment deletion.
     """
-    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
-    comment_result = await db.execute(comment_stmt)
-    comment_to_delete = comment_result.scalar_one_or_none()
-    if not comment_to_delete:
-        raise comment_not_found_exception
-
-    if comment_to_delete.movie_id != movie_id:
-        raise comment_under_wrong_movie_exception
-    if comment_to_delete.user_id != current_user.id:
-        raise comment_not_own_exception
+    comment_to_delete = await get_and_check_comment(
+        comment_id=comment_id, movie_id=movie_id, user_id=current_user.id, db=db
+    )
 
     try:
         await db.delete(comment_to_delete)
