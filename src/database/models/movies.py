@@ -84,6 +84,10 @@ class Genre(Base):
         "Movie", secondary=MovieGenresModel, back_populates="genres"
     )
 
+    @property
+    def movie_count(self) -> int:
+        return len(self.movies)
+
     def __repr__(self) -> str:
         return f"Genre(name={self.name})"
 
