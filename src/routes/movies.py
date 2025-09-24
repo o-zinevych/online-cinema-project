@@ -535,6 +535,84 @@ async def add_movie_to_favorites(
         )
 
 
+@router.delete(
+    "/movies/{movie_id}/favorite/",
+    response_model=MessageResponseSchema,
+    summary="Remove Movie from Favorites",
+    description="Remove the specified movie from the list of favorites.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - The movie is not in favorites list.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not favorite."}}
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during removal "
+            "of the movie from favorites.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "detail": "An error occurred when removing the movie from favorites."
+                    }
+                }
+            },
+        },
+    },
+)
+async def remove_movie_from_favorites(
+    movie_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Favorite movie removal endpoint.
+
+    Deletes the given movie from the list of favorites.
+
+    Args:
+        movie_id (int): ID of the movie to remove from favorites.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 400 if the movie is not favorite.
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during removal of the movie from favorites.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    if current_user not in movie.favorited_by_users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Movie not favorite."
+        )
+
+    try:
+        movie.favorited_by_users.remove(current_user)
+        await db.commit()
+        return MessageResponseSchema(
+            message="Movie removed from favorites successfully."
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when removing the movie from favorites.",
+        )
+
+
 @router.post(
     "/movies/{movie_id}/react/",
     response_model=MessageResponseSchema,
