@@ -149,6 +149,10 @@ class MovieReactionRequestSchema(BaseModel):
     reaction: MovieReactionEnum
 
 
+class MovieRatingRequestSchema(BaseModel):
+    rating: int = Field(ge=1, le=10)
+
+
 class BaseCommentSchema(BaseModel):
     comment: str = Field(min_length=1, max_length=250)
 
