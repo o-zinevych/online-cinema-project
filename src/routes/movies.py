@@ -30,6 +30,8 @@ from schemas.movies import (
     CommentListResponseSchema,
     CommentListItemSchema,
     FavoriteMovieListResponseSchema,
+    GenreListResponseSchema,
+    GenreListItemSchema,
 )
 from security.account_utils import get_current_user
 
@@ -1055,3 +1057,47 @@ async def delete_own_comment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when deleting the comment.",
         )
+
+
+@router.get(
+    "/genres/",
+    response_model=GenreListResponseSchema,
+    summary="Genre List",
+    description="Get a list of all genres with their movie count.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - No genres were found.",
+            "content": {
+                "application/json": {"example": {"detail": "No genres found."}}
+            },
+        }
+    },
+)
+async def get_genres(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> GenreListResponseSchema:
+    """
+    Genre list endpoint.
+
+    Gets a list of all available genres with their movie count.
+
+    Args:
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        GenreListResponseSchema: Genre list with movie counts.
+
+    Raises:
+        HTTPException:
+            - 404 if no genres were found.
+    """
+    result = await db.execute(select(Genre).options(selectinload(Genre.movies)))
+    genres = result.scalars().all()
+    if not genres:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No genres found."
+        )
+    genres_list = [GenreListItemSchema.model_validate(genre) for genre in genres]
+    return GenreListResponseSchema(genres=genres_list)
