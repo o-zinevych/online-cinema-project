@@ -341,6 +341,58 @@ async def get_movies(
 
 
 @router.get(
+    "/movies/my-favorites/",
+    response_model=FavoriteMovieListResponseSchema,
+    summary="Favorite Movies List",
+    description="Get a paginated list of favorite movies with optional"
+    "sorting and filtering.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - No movies found.",
+            "content": {
+                "application/json": {"example": {"detail": "No movies found."}}
+            },
+        },
+    },
+)
+async def get_favorite_movies(
+    filter_query: Annotated[FilterParams, Query()],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> FavoriteMovieListResponseSchema:
+    """
+    Movie list endpoint.
+
+    Retrieves the list of movies allowing the client to specify the page number and
+    the number of items per page. It also calculates the total number of pages and items.
+    Provides the links to previous and next pages when applicable.
+    The list can be filtered and searched by the required movie fields.
+    The list is sorted by id by default, but the client can sort it by the name,
+    year and score.
+
+    Args:
+        filter_query: The filters to apply to the query.
+        db (AsyncSession): Asynchronous database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        MovieListResponseSchema: Movie list response.
+
+    Raises:
+        HTTPException:
+            - 404 if no movies are found.
+    """
+    result = await get_paginated_movies(
+        filter_query=filter_query,
+        base_url="/cinema/movies/my-favorites/",
+        db=db,
+        user_id=current_user.id,
+    )
+    return FavoriteMovieListResponseSchema(**result)
+
+
+@router.get(
     "/movies/{movie_id}/",
     response_model=MovieDetailSchema,
     summary="Movie Detail",
