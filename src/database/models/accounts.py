@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Table,
     Column,
+    CheckConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
@@ -84,6 +85,28 @@ class UserMovieReaction(Base):
 
     def __repr__(self) -> str:
         return f"UserMovieReaction(user_id={self.user_id}, movie_id={self.movie_id}, reaction={self.reaction})"
+
+
+class UserMovieRating(Base):
+    __tablename__ = "user_movie_ratings"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="movie_ratings")
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_ratings")
+
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 10", name="rating_range_check"),
+    )
+
+    def __repr__(self) -> str:
+        return f"UserMovieRating(user_id={self.user_id}, movie_id={self.movie_id}, rating={self.rating})"
 
 
 class UserMovieComment(Base):
@@ -176,6 +199,9 @@ class User(Base):
     )
     favorite_movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=UserMovieFavoritesModel, back_populates="favorited_by_users"
+    )
+    movie_ratings: Mapped[list["UserMovieRating"]] = relationship(
+        "UserMovieRating", back_populates="user", cascade="all, delete-orphan"
     )
 
     @classmethod

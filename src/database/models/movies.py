@@ -175,6 +175,9 @@ class Movie(Base):
     favorited_by_users: Mapped[list["User"]] = relationship(
         "User", secondary="user_movie_favorites", back_populates="favorite_movies"
     )
+    user_ratings: Mapped[list["UserMovieRating"]] = relationship(
+        "UserMovieRating", back_populates="movie", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint(
