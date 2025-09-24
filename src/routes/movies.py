@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Query, Depends, HTTPException
-from sqlalchemy import select, func, Select, desc
+from sqlalchemy import select, func, Select, desc, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -13,6 +13,7 @@ from database.models.accounts import (
     UserMovieReaction,
     MovieReactionEnum,
     UserMovieComment,
+    UserMovieFavoritesModel,
 )
 from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.common import MessageResponseSchema
@@ -28,6 +29,7 @@ from schemas.movies import (
     CommentUpdateSchema,
     CommentListResponseSchema,
     CommentListItemSchema,
+    FavoriteMovieListResponseSchema,
 )
 from security.account_utils import get_current_user
 
@@ -64,6 +66,14 @@ def count_offset(page: int, per_page: int) -> int:
 def count_total_pages(total_items: int, per_page: int) -> int:
     """Counts the total pages number for pagination based on items total and per_page."""
     return (total_items + per_page - 1) // per_page
+
+
+async def count_total_items(stmt: Select, db: AsyncSession = Depends(get_db)) -> int:
+    """Counts the total amount of items."""
+    count_stmt = select(func.count()).select_from(stmt.alias())
+    count_result = await db.execute(count_stmt)
+    total_items = count_result.scalar() or 0
+    return total_items
 
 
 def apply_movie_filters(stmt, **filters) -> Select:
@@ -145,6 +155,127 @@ def apply_movie_filters(stmt, **filters) -> Select:
     return stmt
 
 
+async def apply_limit_offset_to_movie_list(
+    stmt: Select, page: int, per_page: int, db: AsyncSession = Depends(get_db)
+):
+    """
+    Applies the given limit and offset to the statement, executes it
+    and returns the movie list.
+    """
+    offset = count_offset(page, per_page)
+    stmt = stmt.limit(per_page).offset(offset)
+    result = await db.execute(stmt)
+    movies = result.scalars().all()
+    if not movies:
+        raise no_movies_exception
+    movie_list = [MovieListItemSchema.model_validate(movie) for movie in movies]
+    return movie_list
+
+
+def add_filters_to_movie_list_page_links(
+    base_url: str, filter_query: FilterParams
+) -> str:
+    """Adds filters from filter_query where applicable to the page link string."""
+    return (
+        base_url
+        + (f"&name={filter_query.name}" if filter_query.name else "")
+        + (
+            f"&description={filter_query.description}"
+            if filter_query.description
+            else ""
+        )
+        + (f"&year={filter_query.year}" if filter_query.year else "")
+        + (
+            f"&year_from={filter_query.year_from}"
+            if filter_query.year_from and not filter_query.year
+            else ""
+        )
+        + (
+            f"&year_to={filter_query.year_to}"
+            if filter_query.year_to and not filter_query.year
+            else ""
+        )
+        + (
+            f"&longer_than={filter_query.longer_than}"
+            if filter_query.longer_than
+            else ""
+        )
+        + (
+            f"&shorter_than={filter_query.shorter_than}"
+            if filter_query.shorter_than
+            else ""
+        )
+        + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
+        + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
+        + (
+            f"certification={filter_query.certification}"
+            if filter_query.certification
+            else ""
+        )
+        + (f"genres={filter_query.genres}" if filter_query.genres else "")
+        + (f"directors={filter_query.directors}" if filter_query.directors else "")
+        + (f"stars={filter_query.stars}" if filter_query.stars else "")
+    )
+
+
+async def get_paginated_movies(
+    filter_query: FilterParams,
+    base_url: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: Optional[int] = None,
+) -> dict:
+    """
+    Get paginated movie list with optional filters, including user favorites.
+
+    Args:
+        filter_query (FilterParams): Filters to apply to the movie list.
+        base_url (str): Base URL of the API to build the links.
+        db (AsyncSession): Asynchronous database session.
+        user_id (Optional[int]): The request's user ID.
+
+    Returns:
+        dict: The movie list with pagination data and page links.
+    """
+    stmt = select(Movie).options(
+        joinedload(Movie.certification),
+        selectinload(Movie.genres),
+        selectinload(Movie.directors),
+        selectinload(Movie.stars),
+    )
+    if user_id:
+        stmt = stmt.join(UserMovieFavoritesModel).where(
+            and_(UserMovieFavoritesModel.c.user_id == user_id)
+        )
+
+    filter_params = filter_query.model_dump()
+    stmt = apply_movie_filters(stmt, **filter_params)
+
+    total_items = await count_total_items(stmt, db)
+    if not total_items:
+        raise no_movies_exception
+
+    page = filter_query.page
+    per_page = filter_query.per_page
+    movie_list = await apply_limit_offset_to_movie_list(stmt, page, per_page, db)
+    total_pages = count_total_pages(total_items, per_page)
+
+    prev_page_link = add_filters_to_movie_list_page_links(
+        f"{base_url}?page={page - 1}&per_page={per_page}&order_by={filter_query.order_by}",
+        filter_query,
+    )
+    next_page_link = add_filters_to_movie_list_page_links(
+        f"{base_url}?page={page + 1}&per_page={per_page}&order_by={filter_query.order_by}",
+        filter_query,
+    )
+    return {
+        "movies": movie_list,
+        "prev_page": prev_page_link if page > 1 else None,
+        "next_page": next_page_link if page < total_pages else None,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+
+
 def get_movie_by_id_stmt(movie_id: int) -> Select:
     return (
         select(Movie)
@@ -203,118 +334,10 @@ async def get_movies(
         HTTPException:
             - 404 if no movies are found.
     """
-
-    page = filter_query.page
-    per_page = filter_query.per_page
-
-    stmt = select(Movie).options(
-        joinedload(Movie.certification),
-        selectinload(Movie.genres),
-        selectinload(Movie.directors),
-        selectinload(Movie.stars),
+    result = await get_paginated_movies(
+        filter_query=filter_query, base_url="/cinema/movies/", db=db
     )
-    filter_params = filter_query.model_dump()
-    stmt = apply_movie_filters(stmt, **filter_params)
-
-    count_stmt = select(func.count()).select_from(stmt.alias())
-    count_result = await db.execute(count_stmt)
-    total_items = count_result.scalar() or 0
-    if not total_items:
-        raise no_movies_exception
-
-    offset = count_offset(page, per_page)
-    stmt = stmt.limit(per_page).offset(offset)
-    movie_result = await db.execute(stmt)
-    movies = movie_result.scalars().all()
-    if not movies:
-        raise no_movies_exception
-
-    movie_list = [MovieListItemSchema.model_validate(movie) for movie in movies]
-    total_pages = count_total_pages(total_items, per_page)
-    return MovieListResponseSchema(
-        movies=movie_list,
-        prev_page=(
-            f"/cinema/movies/?page={page - 1}&per_page={per_page}&order_by={filter_query.order_by}"
-            + (f"&name={filter_query.name}" if filter_query.name else "")
-            + (
-                f"&description={filter_query.description}"
-                if filter_query.description
-                else ""
-            )
-            + (f"&year={filter_query.year}" if filter_query.year else "")
-            + (
-                f"&year_from={filter_query.year_from}"
-                if filter_query.year_from and not filter_query.year
-                else ""
-            )
-            + (
-                f"&year_to={filter_query.year_to}"
-                if filter_query.year_to and not filter_query.year
-                else ""
-            )
-            + (
-                f"&longer_than={filter_query.longer_than}"
-                if filter_query.longer_than
-                else ""
-            )
-            + (
-                f"&shorter_than={filter_query.shorter_than}"
-                if filter_query.shorter_than
-                else ""
-            )
-            + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
-            + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
-            + (
-                f"certification={filter_query.certification}"
-                if filter_query.certification
-                else ""
-            )
-            + (f"genres={filter_query.genres}" if filter_query.genres else "")
-            + (f"directors={filter_query.directors}" if filter_query.directors else "")
-            + (f"stars={filter_query.stars}" if filter_query.stars else "")
-            if page > 1
-            else None
-        ),
-        next_page=(
-            f"/cinema/movies/?page={page + 1}&per_page={per_page}&order_by={filter_query.order_by}"
-            + (f"&name={filter_query.name}" if filter_query.name else "")
-            + (f"&year={filter_query.year}" if filter_query.year else "")
-            + (
-                f"&year_from={filter_query.year_from}"
-                if filter_query.year_from and not filter_query.year
-                else ""
-            )
-            + (
-                f"&year_to={filter_query.year_to}"
-                if filter_query.year_to and not filter_query.year
-                else ""
-            )
-            + (
-                f"&longer_than={filter_query.longer_than}"
-                if filter_query.longer_than
-                else ""
-            )
-            + (
-                f"&shorter_than={filter_query.shorter_than}"
-                if filter_query.shorter_than
-                else ""
-            )
-            + (f"imdb_from={filter_query.imdb_from}" if filter_query.imdb_from else "")
-            + (f"imdb_to={filter_query.imdb_to}" if filter_query.imdb_to else "")
-            + (
-                f"certification={filter_query.certification}"
-                if filter_query.certification
-                else ""
-            )
-            + (f"genres={filter_query.genres}" if filter_query.genres else "")
-            + (f"directors={filter_query.directors}" if filter_query.directors else "")
-            + (f"stars={filter_query.stars}" if filter_query.stars else "")
-            if page < total_pages
-            else None
-        ),
-        total_pages=total_pages,
-        total_items=total_items,
-    )
+    return MovieListResponseSchema(**result)
 
 
 @router.get(
