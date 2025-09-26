@@ -1645,6 +1645,101 @@ async def delete_comment_reply(
         )
 
 
+@router.post(
+    "/movies/{movie_id}/comments/{comment_id}/replies/{reply_id}/like/",
+    response_model=MessageResponseSchema,
+    summary="Like a Comment Reply",
+    description="Add or remove your like on a comment reply.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Reply does not belong to the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This reply does not belong to this comment."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Reply with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred when liking the reply.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when liking the reply."}
+                }
+            },
+        },
+    },
+)
+async def like_comment_reply(
+    movie_id: int,
+    comment_id: int,
+    reply_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Comment reply like endpoint.
+
+    Allows the user to like the specified reply to a comment.
+    If the reply is already liked by them, removes the like.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to which the reply belongs.
+        reply_id (int): ID of the reply to like.
+        background_tasks (BackgroundTasks): Background tasks to send email notifying
+        the reply's owner of a new like.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 400 if the reply is not under the given comment.
+            - 404 if the reply was not found.
+            - 500 if an error occurred when liking the reply.
+    """
+    reply_stmt = (
+        select(MovieCommentReply)
+        .options(
+            joinedload(MovieCommentReply.user), selectinload(MovieCommentReply.likes)
+        )
+        .where(MovieCommentReply.id == reply_id)
+    )
+    reply = await get_and_check_comment_reply(
+        stmt=reply_stmt, comment_id=comment_id, db=db
+    )
+
+    try:
+        if current_user in reply.likes:
+            reply.likes.remove(current_user)
+            await db.commit()
+            return MessageResponseSchema(message="Your like removed successfully.")
+
+        reply_link = (
+            f"{base_email_url}/movies/{movie_id}/comments/{comment_id}/replies/"
+        )
+        background_tasks.add_task(
+            email_sender.send_comment_received_like_email, reply.user.email, reply_link
+        )
+
+        reply.likes.append(current_user)
+        await db.commit()
+        return MessageResponseSchema(message="Reply liked successfully.")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when liking the reply.",
+        )
+
+
 @router.get(
     "/genres/",
     response_model=GenreListResponseSchema,
