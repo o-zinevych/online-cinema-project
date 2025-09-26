@@ -14,7 +14,7 @@ from database.models.accounts import (
     MovieReactionEnum,
     UserMovieComment,
     UserMovieFavoritesModel,
-    UserMovieRating,
+    UserMovieRating, MovieCommentReply,
 )
 from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.common import MessageResponseSchema
@@ -297,18 +297,24 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
 
 
 async def get_and_check_comment(
-    comment_id: int, movie_id: int, user_id: int, db: AsyncSession = Depends(get_db)
-) -> UserMovieComment:
-    """Retrieves and checks a comment's existence, movie ID and owner."""
-    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
-    comment_result = await db.execute(comment_stmt)
+    stmt: Select,
+    movie_id: int,
+    user_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+) -> UserMovieComment | MovieCommentReply:
+    """
+    Retrieves and checks a comment's existence and movie ID.
+    Checks the owner if user_id is provided.
+    """
+    comment_result = await db.execute(stmt)
     comment = comment_result.scalar_one_or_none()
     if not comment:
         raise comment_not_found_exception
 
     if comment.movie_id != movie_id:
         raise comment_under_wrong_movie_exception
-    if comment.user_id != user_id:
+
+    if user_id and comment.user_id != user_id:
         raise comment_not_own_exception
     return comment
 
@@ -1044,8 +1050,9 @@ async def update_own_comment(
             - 404 if the comment was not found.
             - 500 if an error occurred during comment update.
     """
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
     comment_to_update = await get_and_check_comment(
-        comment_id=comment_id, movie_id=movie_id, user_id=current_user.id, db=db
+        stmt=comment_stmt, movie_id=movie_id, user_id=current_user.id, db=db
     )
 
     try:
@@ -1127,8 +1134,9 @@ async def delete_own_comment(
             - 404 if the comment was not found.
             - 500 if an error occurred during comment deletion.
     """
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
     comment_to_delete = await get_and_check_comment(
-        comment_id=comment_id, movie_id=movie_id, user_id=current_user.id, db=db
+        stmt=comment_stmt, movie_id=movie_id, user_id=current_user.id, db=db
     )
 
     try:
