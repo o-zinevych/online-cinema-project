@@ -1257,7 +1257,9 @@ async def like_comment(
     """
     comment_stmt = (
         select(UserMovieComment)
-        .options(selectinload(UserMovieComment.likes))
+        .options(
+            joinedload(UserMovieComment.user), selectinload(UserMovieComment.likes)
+        )
         .where(UserMovieComment.id == comment_id)
     )
     comment = await get_and_check_comment(stmt=comment_stmt, movie_id=movie_id, db=db)
@@ -1267,6 +1269,13 @@ async def like_comment(
             comment.likes.remove(current_user)
             await db.commit()
             return MessageResponseSchema(message="Your like successfully removed.")
+
+        comment_link = f"{base_email_url}/movies/{movie_id}/comments/"
+        background_tasks.add_task(
+            email_sender.send_comment_received_like_email,
+            comment.user.email,
+            comment_link,
+        )
 
         comment.likes.append(current_user)
         await db.commit()
