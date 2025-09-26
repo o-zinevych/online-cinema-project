@@ -224,5 +224,5 @@ class CommentReplyListItemSchema(BaseCommentReplyResponseSchema):
 class CommentReplyListResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    replies: List[CommentReplyListItemSchema]
     total_replies: int
+    replies: List[CommentReplyListItemSchema]
