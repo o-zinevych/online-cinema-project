@@ -14,6 +14,7 @@ from database.models.accounts import (
     MovieReactionEnum,
     UserMovieComment,
     UserMovieFavoritesModel,
+    UserMovieRating,
 )
 from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.common import MessageResponseSchema
@@ -32,6 +33,7 @@ from schemas.movies import (
     FavoriteMovieListResponseSchema,
     GenreListResponseSchema,
     GenreListItemSchema,
+    MovieRatingRequestSchema,
 )
 from security.account_utils import get_current_user
 
@@ -722,6 +724,87 @@ async def leave_movie_reaction(
     except SQLAlchemyError:
         await db.rollback()
         raise reaction_db_exception
+
+
+@router.post(
+    "/movies/{movie_id}/rate",
+    response_model=MessageResponseSchema,
+    summary="Rate a Movie",
+    description="Give the specified movie a rating from 1 to 10.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred when giving the rating.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when rating the movie."}
+                }
+            },
+        },
+    },
+)
+async def rate_movie(
+    movie_id: int,
+    rating_data: MovieRatingRequestSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Movie rating endpoint.
+
+    Allows the user to leave a rating from 1 to 10 on the given movie.
+
+    Args:
+        movie_id (int): ID of the movie to rate.
+        rating_data (MovieRatingRequestSchema): Information about the rating.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message about successful rating creation.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during rating creation/update.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    rating_stmt = select(UserMovieRating).where(
+        UserMovieRating.movie_id == movie_id, UserMovieRating.user_id == current_user.id
+    )
+    rating_result = await db.execute(rating_stmt)
+    rating_record = rating_result.scalar_one_or_none()
+
+    try:
+        rating_to_give = rating_data.rating
+        if rating_record:
+            rating_record.rating = rating_to_give
+        else:
+            new_rating = UserMovieRating(
+                user_id=current_user.id, movie_id=movie_id, rating=rating_to_give
+            )
+            db.add(new_rating)
+        await db.commit()
+        return MessageResponseSchema(
+            message=f"You've rated this movie {rating_to_give} out of 10."
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when rating the movie.",
+        )
 
 
 @router.post(
