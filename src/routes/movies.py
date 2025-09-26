@@ -40,6 +40,8 @@ from schemas.movies import (
     CommentReplyCreateSchema,
     CommentReplyListResponseSchema,
     CommentReplyListItemSchema,
+    CommentReplyUpdateResponseSchema,
+    CommentReplyUpdateSchema,
 )
 from security.account_utils import get_current_user
 
@@ -68,6 +70,10 @@ comment_under_wrong_movie_exception = HTTPException(
 comment_not_own_exception = HTTPException(
     status_code=status.HTTP_403_FORBIDDEN,
     detail="You are not the creator of this comment.",
+)
+reply_under_wrong_comment_exception = HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="This reply does not belong to this comment.",
 )
 
 
@@ -1341,6 +1347,104 @@ async def get_comment_replies(
     return CommentReplyListResponseSchema(
         replies=reply_list, total_replies=total_replies
     )
+
+
+@router.put(
+    "/movies/{movie_id}/comments/{comment_id}/replies/{reply_id}/",
+    response_model=CommentReplyUpdateResponseSchema,
+    summary="Update a Comment Reply",
+    description="Update your reply to a comment under a specific movie.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Reply does not belong to the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This reply does not belong to this comment."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - User is not the owner of the reply.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You are not the creator of this comment."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Reply with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during reply update.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when updating the reply."}
+                }
+            },
+        },
+    },
+)
+async def update_comment_reply(
+    movie_id: int,
+    comment_id: int,
+    reply_id: int,
+    reply_update: CommentReplyUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentReplyUpdateResponseSchema:
+    """
+    Comment reply update endpoint.
+
+    Updates current user's reply to the given comment with the specified movie ID.
+    Checks that the current user is the reply's creator and raises an HTTP 403 error if not.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to which the reply belongs.
+        reply_id (int): ID of the reply to update.
+        reply_update (CommentReplyUpdateSchema): Reply content to update.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentReplyUpdateResponseSchema: Reply details including its ID, content,
+        the user ID and time of update.
+
+    Raises:
+        HTTPException:
+            - 400 if the reply is not under the given comment.
+            - 403 if the reply does not belong to the user.
+            - 404 if the reply was not found.
+            - 500 if an error occurred during reply update.
+    """
+    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
+    reply_result = await db.execute(reply_stmt)
+    reply_to_update = reply_result.scalar_one_or_none()
+    if not reply_to_update:
+        raise comment_not_found_exception
+
+    if reply_to_update.movie_comment_id != comment_id:
+        raise reply_under_wrong_comment_exception
+
+    if reply_to_update.user_id != current_user.id:
+        raise comment_not_own_exception
+
+    try:
+        reply_to_update.content = reply_update.content
+        await db.flush()
+        await db.commit()
+        await db.refresh(reply_to_update)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the reply.",
+        )
+    return CommentReplyUpdateResponseSchema.model_validate(reply_to_update)
 
 
 @router.get(
