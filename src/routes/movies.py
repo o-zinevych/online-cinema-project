@@ -1,12 +1,13 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Query, Depends, HTTPException
+from fastapi import APIRouter, Query, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, func, Select, desc, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
+from config.dependencies import get_account_email_sender, get_settings
 from database import get_db
 from database.models.accounts import (
     User,
@@ -41,6 +42,9 @@ from schemas.movies import (
 from security.account_utils import get_current_user
 
 router = APIRouter()
+
+base_email_url = "http://127.0.0.1:8000/api/v1/cinema"
+email_sender = get_account_email_sender(get_settings())
 
 no_movies_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
@@ -1191,6 +1195,7 @@ async def reply_to_comment(
     movie_id: int,
     comment_id: int,
     reply_data: CommentReplyCreateSchema,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentReplyCreateResponseSchema:
@@ -1204,6 +1209,8 @@ async def reply_to_comment(
         movie_id (int): ID of the movie that was commented on.
         comment_id (int): ID of the comment to reply to.
         reply_data (CommentReplyCreateSchema): The reply content.
+        background_tasks (BackgroundTasks): Background tasks to send new reply notification
+        to the comment's owner.
         current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
@@ -1217,8 +1224,17 @@ async def reply_to_comment(
             - 404 if the comment was not found.
             - 500 if an error occurred during comment reply creation.
     """
-    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
+    comment_stmt = (
+        select(UserMovieComment)
+        .options(joinedload(UserMovieComment.user))
+        .where(UserMovieComment.id == comment_id)
+    )
     comment = await get_and_check_comment(stmt=comment_stmt, movie_id=movie_id, db=db)
+
+    replies_link = f"{base_email_url}/movies/{movie_id}/comments/{comment_id}/replies/"
+    background_tasks.add_task(
+        email_sender.send_comment_received_reply_email, comment.user.email, replies_link
+    )
 
     try:
         comment_reply = MovieCommentReply(
