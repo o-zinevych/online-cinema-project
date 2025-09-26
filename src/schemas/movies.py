@@ -194,3 +194,23 @@ class CommentListResponseSchema(BaseModel):
     next_page: Optional[str]
     total_pages: int
     total_items: int
+
+
+class BaseCommentReplySchema(BaseModel):
+    content: str = Field(min_length=1, max_length=250)
+
+
+class CommentReplyCreateSchema(BaseCommentReplySchema):
+    pass
+
+
+class BaseCommentReplyResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    content: str
+    user_id: int
+
+
+class CommentReplyCreateResponseSchema(BaseCommentReplyResponseSchema):
+    created_at: datetime
