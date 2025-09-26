@@ -990,7 +990,12 @@ async def get_comments(
         raise no_comments_exception
 
     offset = count_offset(page, per_page)
-    comment_stmt = select(UserMovieComment).limit(per_page).offset(offset)
+    comment_stmt = (
+        select(UserMovieComment)
+        .options(selectinload(UserMovieComment.likes))
+        .limit(per_page)
+        .offset(offset)
+    )
     comment_result = await db.execute(comment_stmt)
     comments = comment_result.scalars().all()
     if not comments:
@@ -1163,7 +1168,7 @@ async def delete_own_comment(
 
     Args:
         movie_id (int): ID of the movie that was commented on.
-        comment_id (int): ID of the comment to update.
+        comment_id (int): ID of the comment to delete.
         current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
