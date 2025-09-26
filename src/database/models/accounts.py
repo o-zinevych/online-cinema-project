@@ -132,9 +132,47 @@ class UserMovieComment(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="movie_comments")
     movie: Mapped["Movie"] = relationship("Movie", back_populates="user_comments")
+    comment_replies: Mapped["MovieCommentReply"] = relationship(
+        "MovieCommentReply",
+        back_populates="movie_comment",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"UserMovieComment(user_id={self.user_id}, movie_id={self.movie_id}, comment={self.comment})"
+
+
+class MovieCommentReply(Base):
+    __tablename__ = "comment_replies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_comment_id: Mapped[int] = mapped_column(
+        ForeignKey("user_movie_comments.id", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(String(250), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="comment_replies")
+    movie_comment: Mapped["UserMovieComment"] = relationship(
+        "UserMovieComment", back_populates="comment_replies"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"MovieCommentReply(user_id={self.user_id}, "
+            f"movie_comment_id={self.movie_comment_id}, content={self.content})"
+        )
 
 
 class UserGroup(Base):
@@ -196,6 +234,9 @@ class User(Base):
     )
     movie_comments: Mapped[list["UserMovieComment"]] = relationship(
         "UserMovieComment", back_populates="user", cascade="all, delete-orphan"
+    )
+    comment_replies: Mapped[list["MovieCommentReply"]] = relationship(
+        "MovieCommentReply", back_populates="user", cascade="all, delete-orphan"
     )
     favorite_movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=UserMovieFavoritesModel, back_populates="favorited_by_users"
