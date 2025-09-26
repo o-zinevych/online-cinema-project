@@ -204,6 +204,10 @@ class CommentReplyCreateSchema(BaseCommentReplySchema):
     pass
 
 
+class CommentReplyUpdateSchema(BaseCommentReplySchema):
+    pass
+
+
 class BaseCommentReplyResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -214,6 +218,10 @@ class BaseCommentReplyResponseSchema(BaseModel):
 
 class CommentReplyCreateResponseSchema(BaseCommentReplyResponseSchema):
     created_at: datetime
+
+
+class CommentReplyUpdateResponseSchema(BaseCommentReplyResponseSchema):
+    updated_at: datetime
 
 
 class CommentReplyListItemSchema(BaseCommentReplyResponseSchema):
