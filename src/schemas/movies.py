@@ -228,6 +228,7 @@ class CommentReplyUpdateResponseSchema(BaseCommentReplyResponseSchema):
 class CommentReplyListItemSchema(BaseCommentReplyResponseSchema):
     created_at: datetime
     updated_at: datetime
+    likes_count: int
 
 
 class CommentReplyListResponseSchema(BaseModel):

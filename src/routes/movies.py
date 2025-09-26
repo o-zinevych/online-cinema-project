@@ -1452,8 +1452,10 @@ async def get_comment_replies(
     if not total_replies:
         raise no_comments_exception
 
-    replies_stmt = select(MovieCommentReply).where(
-        MovieCommentReply.movie_comment_id == comment_id
+    replies_stmt = (
+        select(MovieCommentReply)
+        .options(selectinload(MovieCommentReply.likes))
+        .where(MovieCommentReply.movie_comment_id == comment_id)
     )
     replies_result = await db.execute(replies_stmt)
     replies = replies_result.scalars().all()
