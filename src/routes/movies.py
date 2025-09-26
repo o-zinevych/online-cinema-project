@@ -38,6 +38,8 @@ from schemas.movies import (
     MovieRatingRequestSchema,
     CommentReplyCreateResponseSchema,
     CommentReplyCreateSchema,
+    CommentReplyListResponseSchema,
+    CommentReplyListItemSchema,
 )
 from security.account_utils import get_current_user
 
@@ -1252,6 +1254,93 @@ async def reply_to_comment(
             detail="An error occurred when replying to the comment.",
         )
     return CommentReplyCreateResponseSchema.model_validate(comment_reply)
+
+
+@router.get(
+    "/movies/{movie_id}/comments/{comment_id}/replies/",
+    response_model=CommentReplyListResponseSchema,
+    summary="Movie Comment Replies List",
+    description="Get a list of replies to the specified movie comment.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Comment does not match the movie.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This comment does not belong to this movie."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_not_found": {
+                            "summary": "Movie Not Found",
+                            "value": {"detail": "Movie not found."},
+                        },
+                        "comments_not_found": {
+                            "summary": "Comments Not Found",
+                            "value": {"detail": "No comments found."},
+                        },
+                    }
+                },
+            },
+        },
+    },
+)
+async def get_comment_replies(
+    movie_id: int,
+    comment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentReplyListResponseSchema:
+    """
+    Comment replies list endpoint.
+
+    Retrieves a list of replies to the specified comment wit total reply count.
+
+    Args:
+        movie_id (int): ID of the movie that the comment belongs to.
+        comment_id (int): ID of the comment to retrieve replies for.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentReplyListResponseSchema: List of replies for a specific comment.
+
+    Raises:
+        HTTPException:
+            - 400 if the comment is not under the given movie.
+            - 404 if the movie with the given ID or comments/replies were not found.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie = movie_result.scalar_one_or_none()
+    if not movie:
+        raise movie_not_found_exception
+
+    comment_stmt = (
+        select(UserMovieComment)
+        .options(selectinload(UserMovieComment.comment_replies))
+        .where(UserMovieComment.id == comment_id)
+    )
+    comment = await get_and_check_comment(stmt=comment_stmt, movie_id=movie_id, db=db)
+
+    total_replies = comment.replies_count
+    if not total_replies:
+        raise no_comments_exception
+
+    replies_stmt = select(MovieCommentReply).where(
+        MovieCommentReply.movie_comment_id == comment_id
+    )
+    replies_result = await db.execute(replies_stmt)
+    replies = replies_result.scalars().all()
+    reply_list = [CommentReplyListItemSchema.model_validate(reply) for reply in replies]
+    return CommentReplyListResponseSchema(
+        replies=reply_list, total_replies=total_replies
+    )
 
 
 @router.get(
