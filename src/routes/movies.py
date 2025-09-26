@@ -1464,6 +1464,87 @@ async def update_comment_reply(
     return CommentReplyUpdateResponseSchema.model_validate(reply)
 
 
+@router.delete(
+    "/movies/{movie_id}/comments/{comment_id}/replies/{reply_id}/",
+    summary="Delete a Comment Reply",
+    description="Delete your reply to a comment under a specific movie.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        400: {
+            "description": "Bad Request - Reply does not belong to the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This reply does not belong to this comment."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - User is not the owner of the reply.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You are not the creator of this comment."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Reply with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during reply deletion.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the reply."}
+                }
+            },
+        },
+    },
+)
+async def delete_comment_reply(
+    movie_id: int,
+    comment_id: int,
+    reply_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Comment reply deletion endpoint.
+
+    Deletes the current user's specified reply to the given comment.
+    Checks that the current user is the reply's creator and raises an HTTP 403 error if not.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to which the reply belongs.
+        reply_id (int): ID of the reply to update.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 400 if the reply is not under the given comment.
+            - 403 if the reply does not belong to the user.
+            - 404 if the reply was not found.
+            - 500 if an error occurred during reply update.
+    """
+    reply_to_delete = await get_and_check_comment_reply(
+        reply_id=reply_id, comment_id=comment_id, user_id=current_user.id, db=db
+    )
+
+    try:
+        await db.delete(reply_to_delete)
+        await db.commit()
+    except SQLAlchemyError as e:
+        print(e)
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the reply.",
+        )
+
+
 @router.get(
     "/genres/",
     response_model=GenreListResponseSchema,
