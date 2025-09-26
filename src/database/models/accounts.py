@@ -46,6 +46,42 @@ UserMovieFavoritesModel = Table(
 )
 
 
+UserCommentLikesModel = Table(
+    "user_comment_likes",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "comment_id",
+        ForeignKey("user_movie_comments.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
+UserReplyLikesModel = Table(
+    "user_reply_likes",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "reply_id",
+        ForeignKey("comment_replies.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
 class UserGroupEnum(str, enum.Enum):
     USER = "user"
     MODERATOR = "moderator"
@@ -135,10 +171,17 @@ class UserMovieComment(Base):
         back_populates="movie_comment",
         cascade="all, delete-orphan",
     )
+    likes: Mapped[list["User"]] = relationship(
+        "User", secondary=UserCommentLikesModel, back_populates="liked_comments"
+    )
 
     @property
     def replies_count(self) -> int:
         return len(self.comment_replies)
+
+    @property
+    def likes_count(self) -> int:
+        return len(self.likes)
 
     def __repr__(self) -> str:
         return f"UserMovieComment(user_id={self.user_id}, movie_id={self.movie_id}, comment={self.comment})"
@@ -169,6 +212,14 @@ class MovieCommentReply(Base):
     movie_comment: Mapped["UserMovieComment"] = relationship(
         "UserMovieComment", back_populates="comment_replies"
     )
+
+    likes: Mapped[list["User"]] = relationship(
+        "User", secondary=UserReplyLikesModel, back_populates="liked_replies"
+    )
+
+    @property
+    def likes_count(self) -> int:
+        return len(self.likes)
 
     def __repr__(self) -> str:
         return (
@@ -245,6 +296,13 @@ class User(Base):
     )
     movie_ratings: Mapped[list["UserMovieRating"]] = relationship(
         "UserMovieRating", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    liked_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", secondary=UserCommentLikesModel, back_populates="likes"
+    )
+    liked_replies: Mapped[list["MovieCommentReply"]] = relationship(
+        "MovieCommentReply", secondary=UserReplyLikesModel, back_populates="likes"
     )
 
     @classmethod
