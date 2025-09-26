@@ -24,6 +24,7 @@ class EmailSender(EmailSenderInterface):
         old_password_reset_email_template_name: str,
         password_reset_complete_email_template_name: str,
         comment_received_reply_email_template_name: str,
+        comment_received_like_email_template_name: str,
     ) -> None:
         self._hostname = hostname
         self._port = port
@@ -43,6 +44,9 @@ class EmailSender(EmailSenderInterface):
         )
         self._comment_received_reply_email_template_name = (
             comment_received_reply_email_template_name
+        )
+        self._comment_received_like_email_template_name = (
+            comment_received_like_email_template_name
         )
         self._env = Environment(loader=FileSystemLoader(template_dir))
 
@@ -163,4 +167,21 @@ class EmailSender(EmailSenderInterface):
         )
         html = template.render(replies_link=replies_link)
         subject = "New Reply Received"
+        await self._send_email(email, subject, html)
+
+    async def send_comment_received_like_email(
+        self, email: str, comment_link: str
+    ) -> None:
+        """
+        Send an email notification about a new comment like asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            comment_link (str): The comment link to include in the email.
+        """
+        template = self._env.get_template(
+            self._comment_received_like_email_template_name
+        )
+        html = template.render(comment_link=comment_link)
+        subject = "Your Comment Got a Like"
         await self._send_email(email, subject, html)
