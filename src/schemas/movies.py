@@ -214,3 +214,15 @@ class BaseCommentReplyResponseSchema(BaseModel):
 
 class CommentReplyCreateResponseSchema(BaseCommentReplyResponseSchema):
     created_at: datetime
+
+
+class CommentReplyListItemSchema(BaseCommentReplyResponseSchema):
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommentReplyListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    replies: List[CommentReplyListItemSchema]
+    total_replies: int
