@@ -335,7 +335,7 @@ async def get_and_check_comment(
 
 
 async def get_and_check_comment_reply(
-    reply_id: int,
+    stmt: Select,
     comment_id: int,
     user_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -344,8 +344,7 @@ async def get_and_check_comment_reply(
     Retrieves and checks a reply's existence and comment ID.
     Checks the owner if user_id is provided.
     """
-    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
-    reply_result = await db.execute(reply_stmt)
+    reply_result = await db.execute(stmt)
     reply = reply_result.scalar_one_or_none()
     if not reply:
         raise comment_not_found_exception
@@ -1546,8 +1545,9 @@ async def update_comment_reply(
             - 404 if the reply was not found.
             - 500 if an error occurred during reply update.
     """
+    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
     reply = await get_and_check_comment_reply(
-        reply_id=reply_id, comment_id=comment_id, user_id=current_user.id, db=db
+        stmt=reply_stmt, comment_id=comment_id, user_id=current_user.id, db=db
     )
 
     try:
@@ -1629,15 +1629,15 @@ async def delete_comment_reply(
             - 404 if the reply was not found.
             - 500 if an error occurred during reply update.
     """
+    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
     reply_to_delete = await get_and_check_comment_reply(
-        reply_id=reply_id, comment_id=comment_id, user_id=current_user.id, db=db
+        stmt=reply_stmt, comment_id=comment_id, user_id=current_user.id, db=db
     )
 
     try:
         await db.delete(reply_to_delete)
         await db.commit()
-    except SQLAlchemyError as e:
-        print(e)
+    except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
