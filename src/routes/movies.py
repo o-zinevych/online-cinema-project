@@ -1196,6 +1196,90 @@ async def delete_own_comment(
 
 
 @router.post(
+    "/movies/{movie_id}/comments/{comment_id}/like/",
+    response_model=MessageResponseSchema,
+    summary="Like a Comment",
+    description="Add or remove your like on a comment.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Comment does not match the movie.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This comment does not belong to this movie."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Comment with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred when liking the comment.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when liking the comment."}
+                }
+            },
+        },
+    },
+)
+async def like_comment(
+    movie_id: int,
+    comment_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Comment like endpoint.
+
+    If the user has not liked this comment yet, adds a like.
+    Otherwise, removes the existing like.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to like.
+        background_tasks (BackgroundTasks): Background tasks to send a like notification email.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message informing of the successful liking of the comment.
+
+    Raises:
+        HTTPException:
+            - 400 if the comment is not under the given movie.
+            - 404 if the comment was not found.
+            - 500 if an error occurred while liking the comment.
+    """
+    comment_stmt = (
+        select(UserMovieComment)
+        .options(selectinload(UserMovieComment.likes))
+        .where(UserMovieComment.id == comment_id)
+    )
+    comment = await get_and_check_comment(stmt=comment_stmt, movie_id=movie_id, db=db)
+
+    try:
+        if current_user in comment.likes:
+            comment.likes.remove(current_user)
+            await db.commit()
+            return MessageResponseSchema(message="Your like successfully removed.")
+
+        comment.likes.append(current_user)
+        await db.commit()
+        return MessageResponseSchema(message="Comment liked successfully.")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when liking the comment.",
+        )
+
+
+@router.post(
     "/movies/{movie_id}/comments/{comment_id}/replies/",
     response_model=CommentReplyCreateResponseSchema,
     summary="Reply to a Comment",
