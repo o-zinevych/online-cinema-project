@@ -147,3 +147,20 @@ class EmailSender(EmailSenderInterface):
         html = template.render(email=email, login_link=login_link)
         subject = "Password Reset Complete"
         await self._send_email(email, subject, html)
+
+    async def send_comment_received_reply_email(
+        self, email: str, replies_link: str
+    ) -> None:
+        """
+        Send an email notification about a new comment reply asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            replies_link (str): The link to the reply to include in the email.'
+        """
+        template = self._env.get_template(
+            self._comment_received_reply_email_template_name
+        )
+        html = template.render(replies_link=replies_link)
+        subject = "New Reply Received"
+        await self._send_email(email, subject, html)
