@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database.models.accounts import MovieReactionEnum
+from database.models.accounts import ReactionEnum
 from database.models.base import Base
 
 
@@ -187,15 +187,11 @@ class Movie(Base):
 
     @property
     def likes_count(self) -> int:
-        return sum(
-            1 for r in self.user_reactions if r.reaction == MovieReactionEnum.LIKE
-        )
+        return sum(1 for r in self.user_reactions if r.reaction == ReactionEnum.LIKE)
 
     @property
     def dislikes_count(self) -> int:
-        return sum(
-            1 for r in self.user_reactions if r.reaction == MovieReactionEnum.DISLIKE
-        )
+        return sum(1 for r in self.user_reactions if r.reaction == ReactionEnum.DISLIKE)
 
     @property
     def comments_count(self) -> int:

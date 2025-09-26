@@ -12,7 +12,7 @@ from database import get_db
 from database.models.accounts import (
     User,
     UserMovieReaction,
-    MovieReactionEnum,
+    ReactionEnum,
     UserMovieComment,
     UserMovieFavoritesModel,
     UserMovieRating,
@@ -749,7 +749,7 @@ async def leave_movie_reaction(
         try:
             db_reaction.reaction = user_reaction
             await db.commit()
-            if user_reaction == MovieReactionEnum.LIKE:
+            if user_reaction == ReactionEnum.LIKE:
                 return MessageResponseSchema(message="Movie liked successfully.")
             return MessageResponseSchema(message="Movie disliked successfully.")
         except SQLAlchemyError:
@@ -764,7 +764,7 @@ async def leave_movie_reaction(
         await db.flush()
         await db.commit()
         await db.refresh(new_reaction)
-        if user_reaction == MovieReactionEnum.LIKE:
+        if user_reaction == ReactionEnum.LIKE:
             return MessageResponseSchema(message="Movie liked successfully.")
         return MessageResponseSchema(message="Movie disliked successfully.")
     except SQLAlchemyError:

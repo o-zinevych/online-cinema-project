@@ -57,7 +57,7 @@ class GenderEnum(str, enum.Enum):
     WOMAN = "woman"
 
 
-class MovieReactionEnum(str, enum.Enum):
+class ReactionEnum(str, enum.Enum):
     LIKE = "like"
     DISLIKE = "dislike"
 
@@ -72,9 +72,7 @@ class UserMovieReaction(Base):
     movie_id: Mapped[int] = mapped_column(
         ForeignKey("movies.id", ondelete="CASCADE"), nullable=False
     )
-    reaction: Mapped[MovieReactionEnum] = mapped_column(
-        Enum(MovieReactionEnum), nullable=False
-    )
+    reaction: Mapped[ReactionEnum] = mapped_column(Enum(ReactionEnum), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="movie_reactions")
     movie: Mapped["Movie"] = relationship("Movie", back_populates="user_reactions")
