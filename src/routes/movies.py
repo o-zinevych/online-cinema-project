@@ -334,6 +334,31 @@ async def get_and_check_comment(
     return comment
 
 
+async def get_and_check_comment_reply(
+    reply_id: int,
+    comment_id: int,
+    user_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+) -> MovieCommentReply:
+    """
+    Retrieves and checks a reply's existence and comment ID.
+    Checks the owner if user_id is provided.
+    """
+    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
+    reply_result = await db.execute(reply_stmt)
+    reply = reply_result.scalar_one_or_none()
+    if not reply:
+        raise comment_not_found_exception
+
+    if reply.movie_comment_id != comment_id:
+        raise reply_under_wrong_comment_exception
+
+    if user_id and reply.user_id != user_id:
+        raise comment_not_own_exception
+
+    return reply
+
+
 @router.get(
     "/movies/",
     response_model=MovieListResponseSchema,
@@ -1421,30 +1446,22 @@ async def update_comment_reply(
             - 404 if the reply was not found.
             - 500 if an error occurred during reply update.
     """
-    reply_stmt = select(MovieCommentReply).where(MovieCommentReply.id == reply_id)
-    reply_result = await db.execute(reply_stmt)
-    reply_to_update = reply_result.scalar_one_or_none()
-    if not reply_to_update:
-        raise comment_not_found_exception
-
-    if reply_to_update.movie_comment_id != comment_id:
-        raise reply_under_wrong_comment_exception
-
-    if reply_to_update.user_id != current_user.id:
-        raise comment_not_own_exception
+    reply = await get_and_check_comment_reply(
+        reply_id=reply_id, comment_id=comment_id, user_id=current_user.id, db=db
+    )
 
     try:
-        reply_to_update.content = reply_update.content
+        reply.content = reply_update.content
         await db.flush()
         await db.commit()
-        await db.refresh(reply_to_update)
+        await db.refresh(reply)
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when updating the reply.",
         )
-    return CommentReplyUpdateResponseSchema.model_validate(reply_to_update)
+    return CommentReplyUpdateResponseSchema.model_validate(reply)
 
 
 @router.get(
