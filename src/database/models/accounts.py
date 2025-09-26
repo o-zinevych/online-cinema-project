@@ -13,6 +13,9 @@ from sqlalchemy import (
     Date,
     Text,
     UniqueConstraint,
+    Table,
+    Column,
+    CheckConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
@@ -25,6 +28,60 @@ from security.password_utils import (
 )
 
 
+UserMovieFavoritesModel = Table(
+    "user_movie_favorites",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "movie_id",
+        ForeignKey("movies.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
+UserCommentLikesModel = Table(
+    "user_comment_likes",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "comment_id",
+        ForeignKey("user_movie_comments.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
+UserReplyLikesModel = Table(
+    "user_reply_likes",
+    Base.metadata,
+    Column(
+        "user_id",
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    Column(
+        "reply_id",
+        ForeignKey("comment_replies.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+)
+
+
 class UserGroupEnum(str, enum.Enum):
     USER = "user"
     MODERATOR = "moderator"
@@ -34,6 +91,141 @@ class UserGroupEnum(str, enum.Enum):
 class GenderEnum(str, enum.Enum):
     MAN = "man"
     WOMAN = "woman"
+
+
+class ReactionEnum(str, enum.Enum):
+    LIKE = "like"
+    DISLIKE = "dislike"
+
+
+class UserMovieReaction(Base):
+    __tablename__ = "user_movie_reactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), nullable=False
+    )
+    reaction: Mapped[ReactionEnum] = mapped_column(Enum(ReactionEnum), nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="movie_reactions")
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_reactions")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "movie_id", name="user_movie_reaction_unique"),
+    )
+
+    def __repr__(self) -> str:
+        return f"UserMovieReaction(user_id={self.user_id}, movie_id={self.movie_id}, reaction={self.reaction})"
+
+
+class UserMovieRating(Base):
+    __tablename__ = "user_movie_ratings"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="movie_ratings")
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_ratings")
+
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 10", name="rating_range_check"),
+    )
+
+    def __repr__(self) -> str:
+        return f"UserMovieRating(user_id={self.user_id}, movie_id={self.movie_id}, rating={self.rating})"
+
+
+class UserMovieComment(Base):
+    __tablename__ = "user_movie_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_id: Mapped[int] = mapped_column(
+        ForeignKey("movies.id", ondelete="CASCADE"), nullable=False
+    )
+    comment: Mapped[str] = mapped_column(String(250), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="movie_comments")
+    movie: Mapped["Movie"] = relationship("Movie", back_populates="user_comments")
+    comment_replies: Mapped[list["MovieCommentReply"]] = relationship(
+        "MovieCommentReply",
+        back_populates="movie_comment",
+        cascade="all, delete-orphan",
+    )
+    likes: Mapped[list["User"]] = relationship(
+        "User", secondary=UserCommentLikesModel, back_populates="liked_comments"
+    )
+
+    @property
+    def replies_count(self) -> int:
+        return len(self.comment_replies)
+
+    @property
+    def likes_count(self) -> int:
+        return len(self.likes)
+
+    def __repr__(self) -> str:
+        return f"UserMovieComment(user_id={self.user_id}, movie_id={self.movie_id}, comment={self.comment})"
+
+
+class MovieCommentReply(Base):
+    __tablename__ = "comment_replies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    movie_comment_id: Mapped[int] = mapped_column(
+        ForeignKey("user_movie_comments.id", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(String(250), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="comment_replies")
+    movie_comment: Mapped["UserMovieComment"] = relationship(
+        "UserMovieComment", back_populates="comment_replies"
+    )
+
+    likes: Mapped[list["User"]] = relationship(
+        "User", secondary=UserReplyLikesModel, back_populates="liked_replies"
+    )
+
+    @property
+    def likes_count(self) -> int:
+        return len(self.likes)
+
+    def __repr__(self) -> str:
+        return (
+            f"MovieCommentReply(user_id={self.user_id}, "
+            f"movie_comment_id={self.movie_comment_id}, content={self.content})"
+        )
 
 
 class UserGroup(Base):
@@ -88,6 +280,29 @@ class User(Base):
     )
     refresh_token: Mapped["RefreshToken"] = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    movie_reactions: Mapped[list["UserMovieReaction"]] = relationship(
+        "UserMovieReaction", back_populates="user", cascade="all, delete-orphan"
+    )
+    movie_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", back_populates="user", cascade="all, delete-orphan"
+    )
+    comment_replies: Mapped[list["MovieCommentReply"]] = relationship(
+        "MovieCommentReply", back_populates="user", cascade="all, delete-orphan"
+    )
+    favorite_movies: Mapped[list["Movie"]] = relationship(
+        "Movie", secondary=UserMovieFavoritesModel, back_populates="favorited_by_users"
+    )
+    movie_ratings: Mapped[list["UserMovieRating"]] = relationship(
+        "UserMovieRating", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    liked_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", secondary=UserCommentLikesModel, back_populates="likes"
+    )
+    liked_replies: Mapped[list["MovieCommentReply"]] = relationship(
+        "MovieCommentReply", secondary=UserReplyLikesModel, back_populates="likes"
     )
 
     @classmethod

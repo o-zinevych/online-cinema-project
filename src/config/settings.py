@@ -20,6 +20,8 @@ class BaseAppSettings(BaseSettings):
     PASSWORD_RESET_EMAIL_TEMPLATE_NAME: str = "password_reset_request.html"
     OLD_PASSWORD_RESET_EMAIL_TEMPLATE_NAME: str = "old_password_reset_request.html"
     PASSWORD_RESET_COMPLETE_EMAIL_TEMPLATE_NAME: str = "password_reset_complete.html"
+    COMMENT_RECEIVED_REPLY_EMAIL_TEMPLATE_NAME: str = "comment_received_reply.html"
+    COMMENT_RECEIVED_LIKE_EMAIL_TEMPLATE_NAME: str = "comment_received_like.html"
 
     LOGIN_TIME_DAYS: int = 7
 

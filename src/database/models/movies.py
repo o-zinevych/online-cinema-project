@@ -16,6 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from database.models.accounts import ReactionEnum
 from database.models.base import Base
 
 
@@ -82,6 +83,10 @@ class Genre(Base):
     movies: Mapped[list["Movie"]] = relationship(
         "Movie", secondary=MovieGenresModel, back_populates="genres"
     )
+
+    @property
+    def movie_count(self) -> int:
+        return len(self.movies)
 
     def __repr__(self) -> str:
         return f"Genre(name={self.name})"
@@ -161,11 +166,36 @@ class Movie(Base):
         "Star", secondary=MovieStarsModel, back_populates="movies"
     )
 
+    user_reactions: Mapped[list["UserMovieReaction"]] = relationship(
+        "UserMovieReaction", back_populates="movie", cascade="all, delete-orphan"
+    )
+    user_comments: Mapped[list["UserMovieComment"]] = relationship(
+        "UserMovieComment", back_populates="movie", cascade="all, delete-orphan"
+    )
+    favorited_by_users: Mapped[list["User"]] = relationship(
+        "User", secondary="user_movie_favorites", back_populates="favorite_movies"
+    )
+    user_ratings: Mapped[list["UserMovieRating"]] = relationship(
+        "UserMovieRating", back_populates="movie", cascade="all, delete-orphan"
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "name", "year", "time", name="movie_name_year_time_constraint"
         ),
     )
+
+    @property
+    def likes_count(self) -> int:
+        return sum(1 for r in self.user_reactions if r.reaction == ReactionEnum.LIKE)
+
+    @property
+    def dislikes_count(self) -> int:
+        return sum(1 for r in self.user_reactions if r.reaction == ReactionEnum.DISLIKE)
+
+    @property
+    def comments_count(self) -> int:
+        return len(self.user_comments)
 
     def __repr__(self) -> str:
         return f"Movie(name={self.name}, year={self.year}, imdb_score={self.imdb})"

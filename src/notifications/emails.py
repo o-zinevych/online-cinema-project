@@ -23,6 +23,8 @@ class EmailSender(EmailSenderInterface):
         password_reset_email_template_name: str,
         old_password_reset_email_template_name: str,
         password_reset_complete_email_template_name: str,
+        comment_received_reply_email_template_name: str,
+        comment_received_like_email_template_name: str,
     ) -> None:
         self._hostname = hostname
         self._port = port
@@ -39,6 +41,12 @@ class EmailSender(EmailSenderInterface):
         )
         self._password_reset_complete_email_template_name = (
             password_reset_complete_email_template_name
+        )
+        self._comment_received_reply_email_template_name = (
+            comment_received_reply_email_template_name
+        )
+        self._comment_received_like_email_template_name = (
+            comment_received_like_email_template_name
         )
         self._env = Environment(loader=FileSystemLoader(template_dir))
 
@@ -134,12 +142,46 @@ class EmailSender(EmailSenderInterface):
         Send a password reset complete email asynchronously.
 
         Args:
-        email (str): The recipient's email address.
-        login_link (str): The login link to include in the email.
+            email (str): The recipient's email address.
+            login_link (str): The login link to include in the email.
         """
         template = self._env.get_template(
             self._password_reset_complete_email_template_name
         )
         html = template.render(email=email, login_link=login_link)
         subject = "Password Reset Complete"
+        await self._send_email(email, subject, html)
+
+    async def send_comment_received_reply_email(
+        self, email: str, replies_link: str
+    ) -> None:
+        """
+        Send an email notification about a new comment reply asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            replies_link (str): The link to the reply to include in the email.'
+        """
+        template = self._env.get_template(
+            self._comment_received_reply_email_template_name
+        )
+        html = template.render(replies_link=replies_link)
+        subject = "New Reply Received"
+        await self._send_email(email, subject, html)
+
+    async def send_comment_received_like_email(
+        self, email: str, comment_link: str
+    ) -> None:
+        """
+        Send an email notification about a new comment like asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            comment_link (str): The comment link to include in the email.
+        """
+        template = self._env.get_template(
+            self._comment_received_like_email_template_name
+        )
+        html = template.render(comment_link=comment_link)
+        subject = "Your Comment Got a Like"
         await self._send_email(email, subject, html)
