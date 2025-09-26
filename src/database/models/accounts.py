@@ -132,11 +132,15 @@ class UserMovieComment(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="movie_comments")
     movie: Mapped["Movie"] = relationship("Movie", back_populates="user_comments")
-    comment_replies: Mapped["MovieCommentReply"] = relationship(
+    comment_replies: Mapped[list["MovieCommentReply"]] = relationship(
         "MovieCommentReply",
         back_populates="movie_comment",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def replies_count(self) -> int:
+        return len(self.comment_replies)
 
     def __repr__(self) -> str:
         return f"UserMovieComment(user_id={self.user_id}, movie_id={self.movie_id}, comment={self.comment})"
