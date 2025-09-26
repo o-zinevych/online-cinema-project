@@ -14,7 +14,8 @@ from database.models.accounts import (
     MovieReactionEnum,
     UserMovieComment,
     UserMovieFavoritesModel,
-    UserMovieRating, MovieCommentReply,
+    UserMovieRating,
+    MovieCommentReply,
 )
 from database.models.movies import Movie, Certification, Genre, Director, Star
 from schemas.common import MessageResponseSchema
@@ -34,6 +35,8 @@ from schemas.movies import (
     GenreListResponseSchema,
     GenreListItemSchema,
     MovieRatingRequestSchema,
+    CommentReplyCreateResponseSchema,
+    CommentReplyCreateSchema,
 )
 from security.account_utils import get_current_user
 
@@ -1148,6 +1151,91 @@ async def delete_own_comment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when deleting the comment.",
         )
+
+
+@router.post(
+    "/movies/{movie_id}/comments/{comment_id}/replies/",
+    response_model=CommentReplyCreateResponseSchema,
+    summary="Reply to a Comment",
+    description="Reply to the comment with the given ID.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Comment does not match the movie.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "This comment does not belong to this movie."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Comment with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Comment not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during "
+            "comment reply creation.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when replying to the comment."
+                    }
+                }
+            },
+        },
+    },
+)
+async def reply_to_comment(
+    movie_id: int,
+    comment_id: int,
+    reply_data: CommentReplyCreateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentReplyCreateResponseSchema:
+    """
+    Comment reply creation endpoint.
+
+    Retrieves the comment to reply to and creates the reply with the given content
+    and belonging to the current user.
+
+    Args:
+        movie_id (int): ID of the movie that was commented on.
+        comment_id (int): ID of the comment to reply to.
+        reply_data (CommentReplyCreateSchema): The reply content.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        CommentReplyCreateResponseSchema: The reply ID, content, user ID
+        and time of creation.
+
+    Raises:
+        HTTPException:
+            - 400 if the comment is not under the given movie.
+            - 404 if the comment was not found.
+            - 500 if an error occurred during comment reply creation.
+    """
+    comment_stmt = select(UserMovieComment).where(UserMovieComment.id == comment_id)
+    comment = await get_and_check_comment(stmt=comment_stmt, movie_id=movie_id, db=db)
+
+    try:
+        comment_reply = MovieCommentReply(
+            user_id=current_user.id,
+            movie_comment_id=comment.id,
+            content=reply_data.content,
+        )
+        db.add(comment_reply)
+        await db.commit()
+        await db.refresh(comment_reply)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when replying to the comment.",
+        )
+    return CommentReplyCreateResponseSchema.model_validate(comment_reply)
 
 
 @router.get(
