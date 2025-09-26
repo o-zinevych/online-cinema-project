@@ -59,3 +59,15 @@ class EmailSenderInterface(ABC):
             email (str): The recipient's email address.
             replies_link (str): The link to the reply to include in the email.'
         """
+
+    @abstractmethod
+    async def send_comment_received_like_email(
+        self, email: str, comment_link: str
+    ) -> None:
+        """
+        Send an email notification about a new comment like asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            comment_link (str): The comment link to include in the email.
+        """
