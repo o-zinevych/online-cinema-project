@@ -118,27 +118,40 @@ class FilterParams(BaseModel):
     )
 
 
-class MovieDetailSchema(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"examples": [movie_detail_response_schema_example]},
-    )
-
-    id: int
-    uuid: UUID
+class BaseMovieDetailSchema(BaseModel):
     name: str
     year: int
     time: int
     imdb: float
     votes: int
-    meta_score: Optional[float]
-    gross: Optional[float]
+    meta_score: Optional[float] = None
+    gross: Optional[float] = None
     description: str
-    price: Optional[Decimal]
+    price: Optional[Decimal] = None
     certification: CertificationSchema
     genres: List[GenreSchema]
     directors: List[DirectorSchema]
     stars: List[StarSchema]
+
+
+class MovieCreateRequestSchema(BaseMovieDetailSchema):
+    pass
+
+
+class MovieCreateResponseSchema(BaseMovieDetailSchema):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    uuid: UUID
+
+
+class MovieDetailSchema(BaseMovieDetailSchema):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [movie_detail_response_schema_example]},
+    )
+    id: int
+    uuid: UUID
 
     likes_count: int
     dislikes_count: int
