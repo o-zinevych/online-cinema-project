@@ -1,8 +1,8 @@
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TypeVar, Type
 
 from fastapi import APIRouter, Query, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, func, Select, desc, and_
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
@@ -42,8 +42,13 @@ from schemas.movies import (
     CommentReplyListItemSchema,
     CommentReplyUpdateResponseSchema,
     CommentReplyUpdateSchema,
+    MovieCreateResponseSchema,
+    MovieCreateRequestSchema,
+    GenreSchema,
+    DirectorSchema,
+    StarSchema,
 )
-from security.account_utils import get_current_user
+from security.account_utils import get_current_user, require_moderator_or_admin
 
 router = APIRouter()
 
@@ -75,6 +80,65 @@ reply_under_wrong_comment_exception = HTTPException(
     status_code=status.HTTP_400_BAD_REQUEST,
     detail="This reply does not belong to this comment.",
 )
+
+T = TypeVar("T", Genre, Director, Star)
+
+
+async def get_or_create_certification(
+    certification_name: str, db: AsyncSession = Depends(get_db)
+) -> Certification | None:
+    """Retrieves or creates a certification by its name."""
+    certification_stmt = select(Certification).where(
+        Certification.name == certification_name
+    )
+    certification_result = await db.execute(certification_stmt)
+    certification = certification_result.scalar_one_or_none()
+    if certification:
+        return certification
+
+    try:
+        new_certification = Certification(name=certification_name)
+        db.add(new_certification)
+        await db.flush()
+        return new_certification
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the certification.",
+        )
+
+
+async def get_or_create_related_movie_items(
+    item_list: list[GenreSchema | DirectorSchema | StarSchema],
+    model: Type[T],
+    item_type: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[T]:
+    """Retrieves the existing items related to a movie or creates them if non-existent."""
+    final_items = []
+    for item in item_list:
+        stmt = select(model).where(model.name == item.name)
+        result = await db.execute(stmt)
+        db_item = result.scalar_one_or_none()
+
+        if db_item:
+            final_items.append(db_item)
+        else:
+            try:
+                new_item_data = item.model_dump()
+                new_item = model(**new_item_data)
+                db.add(new_item)
+                await db.flush()
+                final_items.append(new_item)
+            except SQLAlchemyError:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"An error occurred when creating the {item_type}.",
+                )
+
+    return final_items
 
 
 def count_offset(page: int, per_page: int) -> int:
@@ -356,6 +420,163 @@ async def get_and_check_comment_reply(
         raise comment_not_own_exception
 
     return reply
+
+
+@router.post(
+    "/movies/",
+    response_model=MovieCreateResponseSchema,
+    summary="Create a Movie",
+    description="Create a movie if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid data to create movie was provided.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid data: A constraint was violated."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        409: {
+            "description": "Conflict - Movie name, year and runtime constraint violated.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "A movie with this name, year, and runtime already exists."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie "
+            "or its elements creation.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_db_error": {
+                            "summary": "Movie Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the movie."
+                            },
+                        },
+                        "certification_db_error": {
+                            "summary": "Certification Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the certification."
+                            },
+                        },
+                        "genre_db_error": {
+                            "summary": "Genre Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the genre."
+                            },
+                        },
+                        "director_db_error": {
+                            "summary": "Director Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the director."
+                            },
+                        },
+                        "star_db_error": {
+                            "summary": "Star Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the star."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+    },
+)
+async def create_movie(
+    movie_data: MovieCreateRequestSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MovieCreateResponseSchema:
+    """
+    Movie creation endpoint.
+
+    Allows moderators and admin users to create a new movie instance.
+    Handles Integrity and SQLAlchemy errors in the process of creation.
+    If the certificate, genres, directors or stars do not exist in the database,
+    they will be created.
+
+    Args:
+        movie_data (MovieCreateRequestSchema): The information about the movie.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieCreateResponseSchema: The details of the created movie.
+
+    Raises:
+        HTTPException:
+            - 400 if the provided data is invalid, a constraint was violated.
+            - 403 if the user is not a moderator or admin.
+            - 409 if the unique constraint on name, year and runtime was violated.
+            - 500 if an error occurred during movie or its elements' creation.
+    """
+    try:
+        certification = await get_or_create_certification(
+            movie_data.certification.name, db
+        )
+        certification_id = certification.id
+
+        genres = await get_or_create_related_movie_items(
+            item_list=movie_data.genres, model=Genre, item_type="genre", db=db
+        )
+
+        directors = await get_or_create_related_movie_items(
+            item_list=movie_data.directors, model=Director, item_type="director", db=db
+        )
+
+        stars = await get_or_create_related_movie_items(
+            item_list=movie_data.stars, model=Star, item_type="star", db=db
+        )
+
+        base_movie_data = movie_data.model_dump(
+            exclude={"certification", "genres", "directors", "stars"}
+        )
+        new_movie = Movie(**base_movie_data)
+        new_movie.certification_id = certification_id
+
+        new_movie.genres = genres
+        new_movie.directors = directors
+        new_movie.stars = stars
+
+        db.add(new_movie)
+        await db.flush()
+        await db.commit()
+
+        return MovieCreateResponseSchema.model_validate(new_movie)
+    except IntegrityError as error:
+        await db.rollback()
+        if "movie_name_year_time_constraint" in str(error):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A movie with this name, year, and runtime already exists.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid data: A constraint was violated.",
+        )
+    except SQLAlchemyError as error:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the movie.",
+        )
 
 
 @router.get(
