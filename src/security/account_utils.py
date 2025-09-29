@@ -6,7 +6,7 @@ from starlette import status
 
 from config.dependencies import get_jwt_auth_manager
 from database import get_db
-from database.models.accounts import User, UserGroup
+from database.models.accounts import User, UserGroup, UserGroupEnum
 from security.token_manager import JWTAuthManager
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -55,6 +55,39 @@ async def get_current_user(
     return db_user
 
 
+async def require_moderator_or_admin(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> User:
+    """
+    Checks that the current user is either a moderator or admin.
+
+    Args:
+        current_user (User): The current user.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        User: The current user.
+    """
+    moderator_stmt = select(UserGroup).where(UserGroup.name == UserGroupEnum.MODERATOR)
+    moderator_result = await db.execute(moderator_stmt)
+    moderator_group = moderator_result.scalars().first()
+
+    admin_stmt = select(UserGroup).where(UserGroup.name == UserGroupEnum.ADMIN)
+    admin_result = await db.execute(admin_stmt)
+    admin_group = admin_result.scalars().first()
+
+    if (
+        current_user.group_id == moderator_group.id
+        or current_user.group_id == admin_group.id
+    ):
+        return current_user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You must be a moderator or admin to do this.",
+    )
+
+
 async def require_admin(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -68,7 +101,9 @@ async def require_admin(
     Returns:
         User: The current user.
     """
-    result = await db.execute(select(UserGroup).where(UserGroup.name == "ADMIN"))
+    result = await db.execute(
+        select(UserGroup).where(UserGroup.name == UserGroupEnum.ADMIN)
+    )
     admin_group = result.scalars().first()
     if current_user.group_id != admin_group.id:
         raise HTTPException(
