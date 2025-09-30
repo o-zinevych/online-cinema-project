@@ -119,7 +119,7 @@ async def get_or_create_related_movie_items(
     """Retrieves the existing items related to a movie or creates them if non-existent."""
     final_items = []
     for item in item_list:
-        stmt = select(model).where(model.name == item.name)
+        stmt = select(model).where(model.name.ilike(item.name))
         result = await db.execute(stmt)
         db_item = result.scalar_one_or_none()
 
@@ -128,6 +128,7 @@ async def get_or_create_related_movie_items(
         else:
             try:
                 new_item_data = item.model_dump()
+                new_item_data["name"] = new_item_data["name"].title()
                 new_item = model(**new_item_data)
                 db.add(new_item)
                 await db.flush()
