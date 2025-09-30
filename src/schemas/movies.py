@@ -22,6 +22,10 @@ class GenreSchema(BaseNameSchema):
     pass
 
 
+class GenreCreateResponseSchema(BaseNameSchema):
+    id: int
+
+
 class GenreListItemSchema(GenreSchema):
     movie_count: int
 
