@@ -2480,3 +2480,75 @@ async def update_genre(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when updating the genre.",
         )
+
+
+@router.delete(
+    "/genres/{genre_id}/",
+    summary="Delete Genre",
+    description="Delete a genre if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Genre with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre deletion.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the genre."}
+                }
+            },
+        },
+    },
+)
+async def delete_genre(
+    genre_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genre deletion endpoint.
+
+    Allows moderators and admin users to delete the specified genre.
+
+    Args:
+        genre_id (int): The ID of the genre to delete.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given genre was not found.
+            - 500 if an error occurred during genre deletion.
+    """
+    genre_stmt = select(Genre).where(Genre.id == genre_id)
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if not genre:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found."
+        )
+
+    try:
+        await db.delete(genre)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the genre.",
+        )
