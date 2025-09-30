@@ -49,6 +49,7 @@ from schemas.movies import (
     StarSchema,
     MovieUpdateRequestSchema,
     GenreDetailSchema,
+    StarDetailSchema,
 )
 from security.account_utils import get_current_user, require_moderator_or_admin
 
@@ -2551,4 +2552,84 @@ async def delete_genre(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when deleting the genre.",
+        )
+
+
+@router.post(
+    "/stars/",
+    response_model=StarDetailSchema,
+    summary="Create an Actor",
+    description="Create an actor if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Star with the given name already exists.",
+            "content": {
+                "application/json": {"example": {"detail": "Star already exists."}}
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star creation.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when creating the star."}
+                }
+            },
+        },
+    },
+)
+async def create_star(
+    star_data: StarSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star creation endpoint.
+
+    Allows moderators and admin users to create an actor if they do not exist yet.
+
+    Args:
+        star_data (StarSchema): The name of the actor to be created.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: The new star details including their name and ID.
+
+    Raises:
+        HTTPException:
+            - 400 if a star with the given name already exists.
+            - 403 if the user is not a moderator or admin.
+            - 500 if an error occurred during star creation.
+    """
+    star_stmt = select(Star).where(Star.name.ilike(star_data.name))
+    star_result = await db.execute(star_stmt)
+    star_record = star_result.scalar_one_or_none()
+    if star_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Star already exists."
+        )
+
+    try:
+        star_name = star_data.name.title()
+        new_star = Star(name=star_name)
+        db.add(new_star)
+        await db.commit()
+        await db.refresh(new_star)
+        return StarDetailSchema.model_validate(new_star)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the star.",
         )
