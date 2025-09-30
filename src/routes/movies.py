@@ -1,6 +1,7 @@
 from typing import Annotated, Optional, TypeVar, Type
 
 from fastapi import APIRouter, Query, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy import select, func, Select, desc, and_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +85,8 @@ reply_under_wrong_comment_exception = HTTPException(
     detail="This reply does not belong to this comment.",
 )
 
-T = TypeVar("T", Genre, Director, Star)
+TModel = TypeVar("TModel", Genre, Director, Star)
+TSchema = TypeVar("TSchema", bound=BaseModel)
 
 
 async def get_or_create_certification(
@@ -114,10 +116,10 @@ async def get_or_create_certification(
 
 async def get_or_create_related_movie_items(
     item_list: list[GenreSchema | DirectorSchema | StarSchema],
-    model: Type[T],
+    model: Type[TModel],
     item_type: str,
     db: AsyncSession = Depends(get_db),
-) -> list[T]:
+) -> list[TModel]:
     """Retrieves the existing items related to a movie or creates them if non-existent."""
     final_items = []
     for item in item_list:
@@ -242,21 +244,26 @@ def apply_movie_filters(stmt, **filters) -> Select:
     return stmt
 
 
-async def apply_limit_offset_to_movie_list(
-    stmt: Select, page: int, per_page: int, db: AsyncSession = Depends(get_db)
+async def apply_limit_offset_to_item_list(
+    stmt: Select,
+    page: int,
+    per_page: int,
+    error_to_raise: HTTPException,
+    list_item_schema: Type[TSchema],
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Applies the given limit and offset to the statement, executes it
-    and returns the movie list.
+    and returns the list of items.
     """
     offset = count_offset(page, per_page)
     stmt = stmt.limit(per_page).offset(offset)
     result = await db.execute(stmt)
-    movies = result.scalars().all()
-    if not movies:
-        raise no_movies_exception
-    movie_list = [MovieListItemSchema.model_validate(movie) for movie in movies]
-    return movie_list
+    items = result.scalars().all()
+    if not items:
+        raise error_to_raise
+    item_list = [list_item_schema.model_validate(item) for item in items]
+    return item_list
 
 
 def add_filters_to_movie_list_page_links(
@@ -343,7 +350,9 @@ async def get_paginated_movies(
 
     page = filter_query.page
     per_page = filter_query.per_page
-    movie_list = await apply_limit_offset_to_movie_list(stmt, page, per_page, db)
+    movie_list = await apply_limit_offset_to_item_list(
+        stmt, page, per_page, no_movies_exception, MovieListItemSchema, db
+    )
     total_pages = count_total_pages(total_items, per_page)
 
     prev_page_link = add_filters_to_movie_list_page_links(
