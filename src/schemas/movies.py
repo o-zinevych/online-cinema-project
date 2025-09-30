@@ -39,6 +39,10 @@ class StarSchema(BaseNameSchema):
     pass
 
 
+class StarDetailSchema(BaseNameSchema):
+    id: int
+
+
 class DirectorSchema(BaseNameSchema):
     pass
 
