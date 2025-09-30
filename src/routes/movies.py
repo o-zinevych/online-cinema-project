@@ -47,6 +47,7 @@ from schemas.movies import (
     GenreSchema,
     DirectorSchema,
     StarSchema,
+    MovieUpdateRequestSchema,
 )
 from security.account_utils import get_current_user, require_moderator_or_admin
 
@@ -571,7 +572,7 @@ async def create_movie(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid data: A constraint was violated.",
         )
-    except SQLAlchemyError as error:
+    except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -722,6 +723,187 @@ async def get_movie_by_id(
     if not movie_record:
         raise movie_not_found_exception
     return MovieDetailSchema.model_validate(movie_record)
+
+
+@router.patch(
+    "/movies/{movie_id}/",
+    response_model=MovieDetailSchema,
+    summary="Movie Update",
+    description="Update movie data if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid update data.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_update_data": {
+                            "summary": "No Data Provided",
+                            "value": {"detail": "No update data was provided."},
+                        },
+                        "invalid_data": {
+                            "summary": "Invalid Data Provided",
+                            "value": {
+                                "detail": "Invalid data: A constraint was violated."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie update"
+            " or its elements creation.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_db_error": {
+                            "summary": "Movie Update Error",
+                            "value": {
+                                "detail": "An error occurred when updating the movie."
+                            },
+                        },
+                        "certification_db_error": {
+                            "summary": "Certification Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the certification."
+                            },
+                        },
+                        "genre_db_error": {
+                            "summary": "Genre Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the genre."
+                            },
+                        },
+                        "director_db_error": {
+                            "summary": "Director Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the director."
+                            },
+                        },
+                        "star_db_error": {
+                            "summary": "Star Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the star."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+    },
+)
+async def update_movie(
+    movie_id: int,
+    update_data: MovieUpdateRequestSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MovieDetailSchema:
+    """
+    Movie update endpoint.
+
+    Allows moderators and admin users to partially update the movie data.
+    If the related certificate, genres, directors or stars do not exist in the database,
+    they will be created.
+
+    Args:
+        movie_id (int): ID of the movie to update.
+        update_data (MovieUpdateRequestSchema): Data to update in the movie.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieDetailSchema: Movie detail response with all the movie data.
+
+    Raises:
+        HTTPException:
+            - 400 if the provided data is invalid, a constraint was violated.
+            - 403 if the user is not a moderator or admin.
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during movie update or its elements' creation.
+    """
+    update_dict = update_data.model_dump(exclude_unset=True)
+    if not update_dict:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update data was provided.",
+        )
+
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie_to_update = movie_result.scalar_one_or_none()
+    if not movie_to_update:
+        raise movie_not_found_exception
+
+    try:
+        update_dict = update_data.model_dump(
+            exclude_unset=True,
+            exclude={"certification", "genres", "directors", "stars"},
+        )
+        for field, value in update_dict.items():
+            if hasattr(movie_to_update, field):
+                setattr(movie_to_update, field, value)
+
+        certification_data = update_data.certification
+        if certification_data:
+            certification = await get_or_create_certification(
+                certification_data.name, db
+            )
+            movie_to_update.certification_id = certification.id
+
+        genres_data = update_data.genres
+        if genres_data:
+            genres = await get_or_create_related_movie_items(
+                item_list=genres_data, model=Genre, item_type="genre", db=db
+            )
+            movie_to_update.genres = genres
+
+        directors_data = update_data.directors
+        if directors_data:
+            directors = await get_or_create_related_movie_items(
+                item_list=directors_data, model=Director, item_type="director", db=db
+            )
+            movie_to_update.directors = directors
+
+        stars_data = update_data.stars
+        if stars_data:
+            stars = await get_or_create_related_movie_items(
+                item_list=stars_data, model=Star, item_type="star", db=db
+            )
+            movie_to_update.stars = stars
+
+        db.add(movie_to_update)
+        await db.flush()
+        await db.commit()
+        return MovieDetailSchema.model_validate(movie_to_update)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid data: A constraint was violated.",
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the movie.",
+        )
 
 
 @router.post(
