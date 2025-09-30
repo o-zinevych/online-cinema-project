@@ -51,6 +51,7 @@ from schemas.movies import (
     MovieUpdateRequestSchema,
     GenreDetailSchema,
     StarDetailSchema,
+    StarListResponseSchema,
 )
 from security.account_utils import get_current_user, require_moderator_or_admin
 
@@ -2642,3 +2643,68 @@ async def create_star(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when creating the star.",
         )
+
+
+@router.get(
+    "/stars/",
+    response_model=StarListResponseSchema,
+    summary="Star List",
+    description="Get the list of stars with pagination.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - No stars found.",
+            "content": {"application/json": {"example": {"detail": "No stars found."}}},
+        },
+    },
+)
+async def get_stars(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StarListResponseSchema:
+    """
+    Star list endpoint.
+
+    Retrieves the list of movies allowing the client to specify the page number and
+    the number of items per page. It also calculates the total number of pages and items.
+    Provides the links to previous and next pages when applicable.
+
+    Args:
+        page (int): Page number from the query.
+        per_page (int): Number of items per page from the query.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarListResponseSchema: Star list response.
+
+    Raises:
+        HTTPException:
+            - 404 if no stars are found.
+    """
+    no_stars_exception = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="No stars found."
+    )
+    stmt = select(Genre)
+    total_items = await count_total_items(stmt, db)
+    if not total_items:
+        raise no_stars_exception
+
+    total_pages = count_total_pages(total_items, per_page)
+
+    star_list = await apply_limit_offset_to_item_list(
+        stmt, page, per_page, no_stars_exception, StarDetailSchema, db
+    )
+
+    prev_page_link = f"/cinema/stars/?page={page - 1}&per_page={per_page}"
+    next_page_link = f"/cinema/stars/?page={page + 1}&per_page={per_page}"
+    list_data = {
+        "stars": star_list,
+        "prev_page": prev_page_link if page > 1 else None,
+        "next_page": next_page_link if page < total_pages else None,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return StarListResponseSchema(**list_data)
