@@ -22,7 +22,7 @@ class GenreSchema(BaseNameSchema):
     pass
 
 
-class GenreCreateResponseSchema(BaseNameSchema):
+class GenreDetailSchema(BaseNameSchema):
     id: int
 
 
