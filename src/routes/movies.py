@@ -48,7 +48,7 @@ from schemas.movies import (
     DirectorSchema,
     StarSchema,
     MovieUpdateRequestSchema,
-    GenreCreateResponseSchema,
+    GenreDetailSchema,
 )
 from security.account_utils import get_current_user, require_moderator_or_admin
 
@@ -2206,7 +2206,7 @@ async def like_comment_reply(
 
 @router.post(
     "/genres/",
-    response_model=GenreCreateResponseSchema,
+    response_model=GenreDetailSchema,
     summary="Create a Genre",
     description="Create a new genre if moderator or admin.",
     status_code=status.HTTP_201_CREATED,
@@ -2241,7 +2241,7 @@ async def create_genre(
     genre_data: GenreSchema,
     current_user: User = Depends(require_moderator_or_admin),
     db: AsyncSession = Depends(get_db),
-) -> GenreCreateResponseSchema:
+) -> GenreDetailSchema:
     """
     Genre creation endpoint.
 
@@ -2254,7 +2254,7 @@ async def create_genre(
         db (AsyncSession): Asynchronous database session.
 
     Returns:
-        GenreCreateResponseSchema: The new genre with its id and name.
+        GenreDetailSchema: The new genre with its id and name.
 
     Raises:
         HTTPException:
@@ -2277,7 +2277,7 @@ async def create_genre(
         db.add(new_genre)
         await db.commit()
         await db.refresh(new_genre)
-        return GenreCreateResponseSchema.model_validate(new_genre)
+        return GenreDetailSchema.model_validate(new_genre)
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
@@ -2399,3 +2399,84 @@ async def get_movies_by_genre(
         db=db,
     )
     return MovieListResponseSchema(**movies)
+
+
+@router.put(
+    "/genres/{genre_id}/",
+    response_model=GenreDetailSchema,
+    summary="Update Genre",
+    description="Update a genre if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Genre with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre update.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when updating the genre."}
+                }
+            },
+        },
+    },
+)
+async def update_genre(
+    genre_id: int,
+    update_data: GenreSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> GenreDetailSchema:
+    """
+    Genre update endpoint.
+
+    Allows moderators and admin users to update the specified genre.
+
+    Args:
+        genre_id (int): The ID of the genre to update.
+        update_data (GenreSchema): The new name to give to the genre.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        GenreDetailSchema: The updated genre with its id and new name.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given genre was not found.
+            - 500 if an error occurred during genre update.
+    """
+    genre_stmt = select(Genre).where(Genre.id == genre_id)
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if not genre:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found."
+        )
+
+    try:
+        new_genre_name = update_data.name.title()
+        genre.name = new_genre_name
+        await db.commit()
+        await db.refresh(genre)
+        return GenreDetailSchema.model_validate(genre)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the genre.",
+        )
