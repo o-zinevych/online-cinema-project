@@ -906,6 +906,65 @@ async def update_movie(
         )
 
 
+@router.delete(
+    "/movies/{movie_id}/",
+    summary="Delete a Movie",
+    description="Delete a movie if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie deletion",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the movie."}
+                }
+            },
+        },
+    },
+)
+async def delete_movie(
+    movie_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Movie deletion endpoint.
+
+    Allows moderators and admin users to delete the specified movie.
+
+    Args:
+        movie_id (int): ID of the movie to delete.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during movie deletion.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie_to_delete = movie_result.scalar_one_or_none()
+    if not movie_to_delete:
+        raise movie_not_found_exception
+
+    try:
+        await db.delete(movie_to_delete)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the movie.",
+        )
+
+
 @router.post(
     "/movies/{movie_id}/favorite/",
     response_model=MessageResponseSchema,
