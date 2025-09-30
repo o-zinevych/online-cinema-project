@@ -43,6 +43,16 @@ class StarDetailSchema(BaseNameSchema):
     id: int
 
 
+class StarListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    stars: List[StarDetailSchema]
+    prev_page: Optional[str]
+    next_page: Optional[str]
+    total_pages: int
+    total_items: int
+
+
 class DirectorSchema(BaseNameSchema):
     pass
 
