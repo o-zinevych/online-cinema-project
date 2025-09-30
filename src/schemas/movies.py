@@ -145,6 +145,22 @@ class MovieCreateResponseSchema(BaseMovieDetailSchema):
     uuid: UUID
 
 
+class MovieUpdateRequestSchema(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=250)
+    year: Optional[int] = None
+    time: Optional[int] = None
+    imdb: Optional[float] = None
+    votes: Optional[int] = None
+    meta_score: Optional[float] = None
+    gross: Optional[float] = None
+    description: Optional[str] = Field(None, min_length=1)
+    price: Optional[Decimal] = None
+    certification: Optional[CertificationSchema] = None
+    genres: Optional[List[GenreSchema]] = None
+    directors: Optional[List[DirectorSchema]] = None
+    stars: Optional[List[StarSchema]] = None
+
+
 class MovieDetailSchema(BaseMovieDetailSchema):
     model_config = ConfigDict(
         from_attributes=True,
