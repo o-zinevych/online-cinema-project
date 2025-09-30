@@ -48,6 +48,7 @@ from schemas.movies import (
     DirectorSchema,
     StarSchema,
     MovieUpdateRequestSchema,
+    GenreCreateResponseSchema,
 )
 from security.account_utils import get_current_user, require_moderator_or_admin
 
@@ -2200,6 +2201,88 @@ async def like_comment_reply(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when liking the reply.",
+        )
+
+
+@router.post(
+    "/genres/",
+    response_model=GenreCreateResponseSchema,
+    summary="Create a Genre",
+    description="Create a new genre if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Genre with the given name already exists.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre already exists."}}
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre creation.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when creating the genre."}
+                }
+            },
+        },
+    },
+)
+async def create_genre(
+    genre_data: GenreSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> GenreCreateResponseSchema:
+    """
+    Genre creation endpoint.
+
+    Allows moderators and admin users to create a new genre.
+    Checks that it does not exist yet, and raises 400 if it does.
+
+    Args:
+        genre_data (GenreSchema): The name of the genre to be created.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        GenreCreateResponseSchema: The new genre with its id and name.
+
+    Raises:
+        HTTPException:
+            - 400 if genre with the given name already exists.
+            - 403 if the user is not a moderator or admin.
+            - 500 if an error occurred during genre creation.
+    """
+    genre_stmt = select(Genre).where(Genre.name.ilike(genre_data.name))
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if genre:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Genre already exists."
+        )
+
+    try:
+        genre_dict = genre_data.model_dump()
+        genre_dict["name"] = genre_dict["name"].title()
+        new_genre = Genre(**genre_dict)
+        db.add(new_genre)
+        await db.commit()
+        await db.refresh(new_genre)
+        return GenreCreateResponseSchema.model_validate(new_genre)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the genre.",
         )
 
 
