@@ -2330,8 +2330,7 @@ async def create_genre(
         }
     },
 )
-async def get_genres(db: AsyncSession = Depends(get_db)
-) -> GenreListResponseSchema:
+async def get_genres(db: AsyncSession = Depends(get_db)) -> GenreListResponseSchema:
     """
     Genre list endpoint.
 
