@@ -440,7 +440,9 @@ async def get_and_check_comment_reply(
     return reply
 
 
-async def get_star_by_id(star_id: int, db: AsyncSession = Depends(get_db)) -> Star:
+async def get_star_by_id_or_raise(
+    star_id: int, db: AsyncSession = Depends(get_db)
+) -> Star:
     stmt = select(Star).where(Star.id == star_id)
     result = await db.execute(stmt)
     star = result.scalar_one_or_none()
@@ -2759,5 +2761,78 @@ async def get_star(
         HTTPException:
             - 404 if the star with the given ID was not found.
     """
-    star = await get_star_by_id(star_id, db)
+    star = await get_star_by_id_or_raise(star_id, db)
     return StarDetailSchema.model_validate(star)
+
+
+@router.put(
+    "/stars/{star_id}/",
+    response_model=StarDetailSchema,
+    summary="Update a Star",
+    description="Update the specified star if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Star with the given ID was not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star update.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when updating the star."}
+                }
+            },
+        },
+    },
+)
+async def update_star(
+    star_id: int,
+    update_data: StarSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star update endpoint.
+
+    Allows moderators and admin users to update the specified actor data.
+
+    Args:
+        star_id (int): The ID of the star to update.
+        update_data (StarSchema): The new name to give to the actor.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: The updated star with its ID and new name.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given star was not found.
+            - 500 if an error occurred during star update.
+    """
+    star = await get_star_by_id_or_raise(star_id, db)
+
+    try:
+        new_star_name = update_data.name.title()
+        star.name = new_star_name
+        await db.commit()
+        await db.refresh(star)
+        return StarDetailSchema.model_validate(star)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the star.",
+        )
