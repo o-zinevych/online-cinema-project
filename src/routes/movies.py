@@ -86,6 +86,10 @@ reply_under_wrong_comment_exception = HTTPException(
     detail="This reply does not belong to this comment.",
 )
 
+star_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Star not found."
+)
+
 TModel = TypeVar("TModel", Genre, Director, Star)
 TSchema = TypeVar("TSchema", bound=BaseModel)
 
@@ -434,6 +438,15 @@ async def get_and_check_comment_reply(
         raise comment_not_own_exception
 
     return reply
+
+
+async def get_star_by_id(star_id: int, db: AsyncSession = Depends(get_db)) -> Star:
+    stmt = select(Star).where(Star.id == star_id)
+    result = await db.execute(stmt)
+    star = result.scalar_one_or_none()
+    if not star:
+        raise star_not_found_exception
+    return star
 
 
 @router.post(
@@ -2708,3 +2721,43 @@ async def get_stars(
         "total_items": total_items,
     }
     return StarListResponseSchema(**list_data)
+
+
+@router.get(
+    "/stars/{star_id}/",
+    response_model=StarDetailSchema,
+    summary="Star Detail",
+    description="Get the details of a specific star.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - Star with the given ID not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+    },
+)
+async def get_star(
+    star_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star detail endpoint.
+
+    Retrieves the ID and name of the specified actor if the actor with
+    the given ID exists.
+
+    Args:
+        star_id (int): ID of the star to retrieve.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: Star detail response with their name and ID.
+
+    Raises:
+        HTTPException:
+            - 404 if the star with the given ID was not found.
+    """
+    star = await get_star_by_id(star_id, db)
+    return StarDetailSchema.model_validate(star)
