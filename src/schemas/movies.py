@@ -22,6 +22,10 @@ class GenreSchema(BaseNameSchema):
     pass
 
 
+class GenreDetailSchema(BaseNameSchema):
+    id: int
+
+
 class GenreListItemSchema(GenreSchema):
     movie_count: int
 
@@ -33,6 +37,20 @@ class GenreListResponseSchema(BaseModel):
 
 class StarSchema(BaseNameSchema):
     pass
+
+
+class StarDetailSchema(BaseNameSchema):
+    id: int
+
+
+class StarListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    stars: List[StarDetailSchema]
+    prev_page: Optional[str]
+    next_page: Optional[str]
+    total_pages: int
+    total_items: int
 
 
 class DirectorSchema(BaseNameSchema):
@@ -118,27 +136,56 @@ class FilterParams(BaseModel):
     )
 
 
-class MovieDetailSchema(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={"examples": [movie_detail_response_schema_example]},
-    )
-
-    id: int
-    uuid: UUID
+class BaseMovieDetailSchema(BaseModel):
     name: str
     year: int
     time: int
     imdb: float
     votes: int
-    meta_score: Optional[float]
-    gross: Optional[float]
+    meta_score: Optional[float] = None
+    gross: Optional[float] = None
     description: str
-    price: Optional[Decimal]
+    price: Optional[Decimal] = None
     certification: CertificationSchema
     genres: List[GenreSchema]
     directors: List[DirectorSchema]
     stars: List[StarSchema]
+
+
+class MovieCreateRequestSchema(BaseMovieDetailSchema):
+    pass
+
+
+class MovieCreateResponseSchema(BaseMovieDetailSchema):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    uuid: UUID
+
+
+class MovieUpdateRequestSchema(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=250)
+    year: Optional[int] = None
+    time: Optional[int] = None
+    imdb: Optional[float] = None
+    votes: Optional[int] = None
+    meta_score: Optional[float] = None
+    gross: Optional[float] = None
+    description: Optional[str] = Field(None, min_length=1)
+    price: Optional[Decimal] = None
+    certification: Optional[CertificationSchema] = None
+    genres: Optional[List[GenreSchema]] = None
+    directors: Optional[List[DirectorSchema]] = None
+    stars: Optional[List[StarSchema]] = None
+
+
+class MovieDetailSchema(BaseMovieDetailSchema):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={"examples": [movie_detail_response_schema_example]},
+    )
+    id: int
+    uuid: UUID
 
     likes_count: int
     dislikes_count: int

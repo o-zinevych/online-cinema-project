@@ -1,8 +1,9 @@
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TypeVar, Type
 
 from fastapi import APIRouter, Query, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy import select, func, Select, desc, and_
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
@@ -42,8 +43,17 @@ from schemas.movies import (
     CommentReplyListItemSchema,
     CommentReplyUpdateResponseSchema,
     CommentReplyUpdateSchema,
+    MovieCreateResponseSchema,
+    MovieCreateRequestSchema,
+    GenreSchema,
+    DirectorSchema,
+    StarSchema,
+    MovieUpdateRequestSchema,
+    GenreDetailSchema,
+    StarDetailSchema,
+    StarListResponseSchema,
 )
-from security.account_utils import get_current_user
+from security.account_utils import get_current_user, require_moderator_or_admin
 
 router = APIRouter()
 
@@ -75,6 +85,71 @@ reply_under_wrong_comment_exception = HTTPException(
     status_code=status.HTTP_400_BAD_REQUEST,
     detail="This reply does not belong to this comment.",
 )
+
+star_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Star not found."
+)
+
+TModel = TypeVar("TModel", Genre, Director, Star)
+TSchema = TypeVar("TSchema", bound=BaseModel)
+
+
+async def get_or_create_certification(
+    certification_name: str, db: AsyncSession = Depends(get_db)
+) -> Certification | None:
+    """Retrieves or creates a certification by its name."""
+    certification_stmt = select(Certification).where(
+        Certification.name == certification_name
+    )
+    certification_result = await db.execute(certification_stmt)
+    certification = certification_result.scalar_one_or_none()
+    if certification:
+        return certification
+
+    try:
+        new_certification = Certification(name=certification_name)
+        db.add(new_certification)
+        await db.flush()
+        return new_certification
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the certification.",
+        )
+
+
+async def get_or_create_related_movie_items(
+    item_list: list[GenreSchema | DirectorSchema | StarSchema],
+    model: Type[TModel],
+    item_type: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[TModel]:
+    """Retrieves the existing items related to a movie or creates them if non-existent."""
+    final_items = []
+    for item in item_list:
+        stmt = select(model).where(model.name.ilike(item.name))
+        result = await db.execute(stmt)
+        db_item = result.scalar_one_or_none()
+
+        if db_item:
+            final_items.append(db_item)
+        else:
+            try:
+                new_item_data = item.model_dump()
+                new_item_data["name"] = new_item_data["name"].title()
+                new_item = model(**new_item_data)
+                db.add(new_item)
+                await db.flush()
+                final_items.append(new_item)
+            except SQLAlchemyError:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"An error occurred when creating the {item_type}.",
+                )
+
+    return final_items
 
 
 def count_offset(page: int, per_page: int) -> int:
@@ -174,21 +249,26 @@ def apply_movie_filters(stmt, **filters) -> Select:
     return stmt
 
 
-async def apply_limit_offset_to_movie_list(
-    stmt: Select, page: int, per_page: int, db: AsyncSession = Depends(get_db)
+async def apply_limit_offset_to_item_list(
+    stmt: Select,
+    page: int,
+    per_page: int,
+    error_to_raise: HTTPException,
+    list_item_schema: Type[TSchema],
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Applies the given limit and offset to the statement, executes it
-    and returns the movie list.
+    and returns the list of items.
     """
     offset = count_offset(page, per_page)
     stmt = stmt.limit(per_page).offset(offset)
     result = await db.execute(stmt)
-    movies = result.scalars().all()
-    if not movies:
-        raise no_movies_exception
-    movie_list = [MovieListItemSchema.model_validate(movie) for movie in movies]
-    return movie_list
+    items = result.scalars().all()
+    if not items:
+        raise error_to_raise
+    item_list = [list_item_schema.model_validate(item) for item in items]
+    return item_list
 
 
 def add_filters_to_movie_list_page_links(
@@ -275,7 +355,9 @@ async def get_paginated_movies(
 
     page = filter_query.page
     per_page = filter_query.per_page
-    movie_list = await apply_limit_offset_to_movie_list(stmt, page, per_page, db)
+    movie_list = await apply_limit_offset_to_item_list(
+        stmt, page, per_page, no_movies_exception, MovieListItemSchema, db
+    )
     total_pages = count_total_pages(total_items, per_page)
 
     prev_page_link = add_filters_to_movie_list_page_links(
@@ -356,6 +438,174 @@ async def get_and_check_comment_reply(
         raise comment_not_own_exception
 
     return reply
+
+
+async def get_star_by_id_or_raise(
+    star_id: int, db: AsyncSession = Depends(get_db)
+) -> Star:
+    stmt = select(Star).where(Star.id == star_id)
+    result = await db.execute(stmt)
+    star = result.scalar_one_or_none()
+    if not star:
+        raise star_not_found_exception
+    return star
+
+
+@router.post(
+    "/movies/",
+    response_model=MovieCreateResponseSchema,
+    summary="Create a Movie",
+    description="Create a movie if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid data to create movie was provided.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid data: A constraint was violated."}
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        409: {
+            "description": "Conflict - Movie name, year and runtime constraint violated.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "A movie with this name, year, and runtime already exists."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie "
+            "or its elements creation.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_db_error": {
+                            "summary": "Movie Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the movie."
+                            },
+                        },
+                        "certification_db_error": {
+                            "summary": "Certification Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the certification."
+                            },
+                        },
+                        "genre_db_error": {
+                            "summary": "Genre Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the genre."
+                            },
+                        },
+                        "director_db_error": {
+                            "summary": "Director Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the director."
+                            },
+                        },
+                        "star_db_error": {
+                            "summary": "Star Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the star."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+    },
+)
+async def create_movie(
+    movie_data: MovieCreateRequestSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MovieCreateResponseSchema:
+    """
+    Movie creation endpoint.
+
+    Allows moderators and admin users to create a new movie instance.
+    Handles Integrity and SQLAlchemy errors in the process of creation.
+    If the certificate, genres, directors or stars do not exist in the database,
+    they will be created.
+
+    Args:
+        movie_data (MovieCreateRequestSchema): The information about the movie.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieCreateResponseSchema: The details of the created movie.
+
+    Raises:
+        HTTPException:
+            - 400 if the provided data is invalid, a constraint was violated.
+            - 403 if the user is not a moderator or admin.
+            - 409 if the unique constraint on name, year and runtime was violated.
+            - 500 if an error occurred during movie or its elements' creation.
+    """
+    try:
+        certification = await get_or_create_certification(
+            movie_data.certification.name, db
+        )
+        certification_id = certification.id
+
+        genres = await get_or_create_related_movie_items(
+            item_list=movie_data.genres, model=Genre, item_type="genre", db=db
+        )
+
+        directors = await get_or_create_related_movie_items(
+            item_list=movie_data.directors, model=Director, item_type="director", db=db
+        )
+
+        stars = await get_or_create_related_movie_items(
+            item_list=movie_data.stars, model=Star, item_type="star", db=db
+        )
+
+        base_movie_data = movie_data.model_dump(
+            exclude={"certification", "genres", "directors", "stars"}
+        )
+        new_movie = Movie(**base_movie_data)
+        new_movie.certification_id = certification_id
+
+        new_movie.genres = genres
+        new_movie.directors = directors
+        new_movie.stars = stars
+
+        db.add(new_movie)
+        await db.flush()
+        await db.commit()
+
+        return MovieCreateResponseSchema.model_validate(new_movie)
+    except IntegrityError as error:
+        await db.rollback()
+        if "movie_name_year_time_constraint" in str(error):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A movie with this name, year, and runtime already exists.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid data: A constraint was violated.",
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the movie.",
+        )
 
 
 @router.get(
@@ -501,6 +751,246 @@ async def get_movie_by_id(
     if not movie_record:
         raise movie_not_found_exception
     return MovieDetailSchema.model_validate(movie_record)
+
+
+@router.patch(
+    "/movies/{movie_id}/",
+    response_model=MovieDetailSchema,
+    summary="Movie Update",
+    description="Update movie data if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Invalid update data.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_update_data": {
+                            "summary": "No Data Provided",
+                            "value": {"detail": "No update data was provided."},
+                        },
+                        "invalid_data": {
+                            "summary": "Invalid Data Provided",
+                            "value": {
+                                "detail": "Invalid data: A constraint was violated."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie update"
+            " or its elements creation.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "movie_db_error": {
+                            "summary": "Movie Update Error",
+                            "value": {
+                                "detail": "An error occurred when updating the movie."
+                            },
+                        },
+                        "certification_db_error": {
+                            "summary": "Certification Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the certification."
+                            },
+                        },
+                        "genre_db_error": {
+                            "summary": "Genre Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the genre."
+                            },
+                        },
+                        "director_db_error": {
+                            "summary": "Director Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the director."
+                            },
+                        },
+                        "star_db_error": {
+                            "summary": "Star Creation Error",
+                            "value": {
+                                "detail": "An error occurred when creating the star."
+                            },
+                        },
+                    }
+                }
+            },
+        },
+    },
+)
+async def update_movie(
+    movie_id: int,
+    update_data: MovieUpdateRequestSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MovieDetailSchema:
+    """
+    Movie update endpoint.
+
+    Allows moderators and admin users to partially update the movie data.
+    If the related certificate, genres, directors or stars do not exist in the database,
+    they will be created.
+
+    Args:
+        movie_id (int): ID of the movie to update.
+        update_data (MovieUpdateRequestSchema): Data to update in the movie.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MovieDetailSchema: Movie detail response with all the movie data.
+
+    Raises:
+        HTTPException:
+            - 400 if the provided data is invalid, a constraint was violated.
+            - 403 if the user is not a moderator or admin.
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during movie update or its elements' creation.
+    """
+    update_dict = update_data.model_dump(exclude_unset=True)
+    if not update_dict:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update data was provided.",
+        )
+
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie_to_update = movie_result.scalar_one_or_none()
+    if not movie_to_update:
+        raise movie_not_found_exception
+
+    try:
+        update_dict = update_data.model_dump(
+            exclude_unset=True,
+            exclude={"certification", "genres", "directors", "stars"},
+        )
+        for field, value in update_dict.items():
+            if hasattr(movie_to_update, field):
+                setattr(movie_to_update, field, value)
+
+        certification_data = update_data.certification
+        if certification_data:
+            certification = await get_or_create_certification(
+                certification_data.name, db
+            )
+            movie_to_update.certification_id = certification.id
+
+        genres_data = update_data.genres
+        if genres_data:
+            genres = await get_or_create_related_movie_items(
+                item_list=genres_data, model=Genre, item_type="genre", db=db
+            )
+            movie_to_update.genres = genres
+
+        directors_data = update_data.directors
+        if directors_data:
+            directors = await get_or_create_related_movie_items(
+                item_list=directors_data, model=Director, item_type="director", db=db
+            )
+            movie_to_update.directors = directors
+
+        stars_data = update_data.stars
+        if stars_data:
+            stars = await get_or_create_related_movie_items(
+                item_list=stars_data, model=Star, item_type="star", db=db
+            )
+            movie_to_update.stars = stars
+
+        db.add(movie_to_update)
+        await db.flush()
+        await db.commit()
+        return MovieDetailSchema.model_validate(movie_to_update)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid data: A constraint was violated.",
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the movie.",
+        )
+
+
+@router.delete(
+    "/movies/{movie_id}/",
+    summary="Delete a Movie",
+    description="Delete a movie if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {
+            "description": "Not Found - Movie with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Movie not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during movie deletion",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the movie."}
+                }
+            },
+        },
+    },
+)
+async def delete_movie(
+    movie_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Movie deletion endpoint.
+
+    Allows moderators and admin users to delete the specified movie.
+
+    Args:
+        movie_id (int): ID of the movie to delete.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 404 if the movie with the given ID was not found.
+            - 500 if an error occurred during movie deletion.
+    """
+    movie_stmt = get_movie_by_id_stmt(movie_id)
+    movie_result = await db.execute(movie_stmt)
+    movie_to_delete = movie_result.scalar_one_or_none()
+    if not movie_to_delete:
+        raise movie_not_found_exception
+
+    try:
+        await db.delete(movie_to_delete)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the movie.",
+        )
 
 
 @router.post(
@@ -1740,6 +2230,88 @@ async def like_comment_reply(
         )
 
 
+@router.post(
+    "/genres/",
+    response_model=GenreDetailSchema,
+    summary="Create a Genre",
+    description="Create a new genre if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Genre with the given name already exists.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre already exists."}}
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre creation.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when creating the genre."}
+                }
+            },
+        },
+    },
+)
+async def create_genre(
+    genre_data: GenreSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> GenreDetailSchema:
+    """
+    Genre creation endpoint.
+
+    Allows moderators and admin users to create a new genre.
+    Checks that it does not exist yet, and raises 400 if it does.
+
+    Args:
+        genre_data (GenreSchema): The name of the genre to be created.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        GenreDetailSchema: The new genre with its id and name.
+
+    Raises:
+        HTTPException:
+            - 400 if genre with the given name already exists.
+            - 403 if the user is not a moderator or admin.
+            - 500 if an error occurred during genre creation.
+    """
+    genre_stmt = select(Genre).where(Genre.name.ilike(genre_data.name))
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if genre:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Genre already exists."
+        )
+
+    try:
+        genre_dict = genre_data.model_dump()
+        genre_dict["name"] = genre_dict["name"].title()
+        new_genre = Genre(**genre_dict)
+        db.add(new_genre)
+        await db.commit()
+        await db.refresh(new_genre)
+        return GenreDetailSchema.model_validate(new_genre)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the genre.",
+        )
+
+
 @router.get(
     "/genres/",
     response_model=GenreListResponseSchema,
@@ -1853,3 +2425,478 @@ async def get_movies_by_genre(
         db=db,
     )
     return MovieListResponseSchema(**movies)
+
+
+@router.put(
+    "/genres/{genre_id}/",
+    response_model=GenreDetailSchema,
+    summary="Update Genre",
+    description="Update a genre if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Genre with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre update.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when updating the genre."}
+                }
+            },
+        },
+    },
+)
+async def update_genre(
+    genre_id: int,
+    update_data: GenreSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> GenreDetailSchema:
+    """
+    Genre update endpoint.
+
+    Allows moderators and admin users to update the specified genre.
+
+    Args:
+        genre_id (int): The ID of the genre to update.
+        update_data (GenreSchema): The new name to give to the genre.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        GenreDetailSchema: The updated genre with its id and new name.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given genre was not found.
+            - 500 if an error occurred during genre update.
+    """
+    genre_stmt = select(Genre).where(Genre.id == genre_id)
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if not genre:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found."
+        )
+
+    try:
+        new_genre_name = update_data.name.title()
+        genre.name = new_genre_name
+        await db.commit()
+        await db.refresh(genre)
+        return GenreDetailSchema.model_validate(genre)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the genre.",
+        )
+
+
+@router.delete(
+    "/genres/{genre_id}/",
+    summary="Delete Genre",
+    description="Delete a genre if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Genre with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Genre not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during genre deletion.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the genre."}
+                }
+            },
+        },
+    },
+)
+async def delete_genre(
+    genre_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Genre deletion endpoint.
+
+    Allows moderators and admin users to delete the specified genre.
+
+    Args:
+        genre_id (int): The ID of the genre to delete.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given genre was not found.
+            - 500 if an error occurred during genre deletion.
+    """
+    genre_stmt = select(Genre).where(Genre.id == genre_id)
+    genre_result = await db.execute(genre_stmt)
+    genre = genre_result.scalar_one_or_none()
+    if not genre:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found."
+        )
+
+    try:
+        await db.delete(genre)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the genre.",
+        )
+
+
+@router.post(
+    "/stars/",
+    response_model=StarDetailSchema,
+    summary="Create an Actor",
+    description="Create an actor if moderator or admin.",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {
+            "description": "Bad Request - Star with the given name already exists.",
+            "content": {
+                "application/json": {"example": {"detail": "Star already exists."}}
+            },
+        },
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star creation.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when creating the star."}
+                }
+            },
+        },
+    },
+)
+async def create_star(
+    star_data: StarSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star creation endpoint.
+
+    Allows moderators and admin users to create an actor if they do not exist yet.
+
+    Args:
+        star_data (StarSchema): The name of the actor to be created.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: The new star details including their name and ID.
+
+    Raises:
+        HTTPException:
+            - 400 if a star with the given name already exists.
+            - 403 if the user is not a moderator or admin.
+            - 500 if an error occurred during star creation.
+    """
+    star_stmt = select(Star).where(Star.name.ilike(star_data.name))
+    star_result = await db.execute(star_stmt)
+    star_record = star_result.scalar_one_or_none()
+    if star_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Star already exists."
+        )
+
+    try:
+        star_name = star_data.name.title()
+        new_star = Star(name=star_name)
+        db.add(new_star)
+        await db.commit()
+        await db.refresh(new_star)
+        return StarDetailSchema.model_validate(new_star)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when creating the star.",
+        )
+
+
+@router.get(
+    "/stars/",
+    response_model=StarListResponseSchema,
+    summary="Star List",
+    description="Get the list of stars with pagination.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - No stars found.",
+            "content": {"application/json": {"example": {"detail": "No stars found."}}},
+        },
+    },
+)
+async def get_stars(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StarListResponseSchema:
+    """
+    Star list endpoint.
+
+    Retrieves the list of movies allowing the client to specify the page number and
+    the number of items per page. It also calculates the total number of pages and items.
+    Provides the links to previous and next pages when applicable.
+
+    Args:
+        page (int): Page number from the query.
+        per_page (int): Number of items per page from the query.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarListResponseSchema: Star list response.
+
+    Raises:
+        HTTPException:
+            - 404 if no stars are found.
+    """
+    no_stars_exception = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="No stars found."
+    )
+    stmt = select(Genre)
+    total_items = await count_total_items(stmt, db)
+    if not total_items:
+        raise no_stars_exception
+
+    total_pages = count_total_pages(total_items, per_page)
+
+    star_list = await apply_limit_offset_to_item_list(
+        stmt, page, per_page, no_stars_exception, StarDetailSchema, db
+    )
+
+    prev_page_link = f"/cinema/stars/?page={page - 1}&per_page={per_page}"
+    next_page_link = f"/cinema/stars/?page={page + 1}&per_page={per_page}"
+    list_data = {
+        "stars": star_list,
+        "prev_page": prev_page_link if page > 1 else None,
+        "next_page": next_page_link if page < total_pages else None,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return StarListResponseSchema(**list_data)
+
+
+@router.get(
+    "/stars/{star_id}/",
+    response_model=StarDetailSchema,
+    summary="Star Detail",
+    description="Get the details of a specific star.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - Star with the given ID not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+    },
+)
+async def get_star(
+    star_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star detail endpoint.
+
+    Retrieves the ID and name of the specified actor if the actor with
+    the given ID exists.
+
+    Args:
+        star_id (int): ID of the star to retrieve.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: Star detail response with their name and ID.
+
+    Raises:
+        HTTPException:
+            - 404 if the star with the given ID was not found.
+    """
+    star = await get_star_by_id_or_raise(star_id, db)
+    return StarDetailSchema.model_validate(star)
+
+
+@router.put(
+    "/stars/{star_id}/",
+    response_model=StarDetailSchema,
+    summary="Update a Star",
+    description="Update the specified star if moderator or admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Star with the given ID was not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star update.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when updating the star."}
+                }
+            },
+        },
+    },
+)
+async def update_star(
+    star_id: int,
+    update_data: StarSchema,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> StarDetailSchema:
+    """
+    Star update endpoint.
+
+    Allows moderators and admin users to update the specified actor data.
+
+    Args:
+        star_id (int): The ID of the star to update.
+        update_data (StarSchema): The new name to give to the actor.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        StarDetailSchema: The updated star with its ID and new name.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given star was not found.
+            - 500 if an error occurred during star update.
+    """
+    star = await get_star_by_id_or_raise(star_id, db)
+
+    try:
+        new_star_name = update_data.name.title()
+        star.name = new_star_name
+        await db.commit()
+        await db.refresh(star)
+        return StarDetailSchema.model_validate(star)
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when updating the star.",
+        )
+
+
+@router.delete(
+    "/stars/{star_id}/",
+    summary="Delete a Star",
+    description="Delete the specified star if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Star with the given ID was not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star deletion.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the star."}
+                }
+            },
+        },
+    },
+)
+async def delete_star(
+    star_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Star deletion endpoint.
+
+    Allows moderators and admin users to delete the specified star.
+
+    Args:
+        star_id (int): The ID of the star to delete.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given star was not found.
+            - 500 if an error occurred during star deletion.
+    """
+    star = await get_star_by_id_or_raise(star_id, db)
+
+    try:
+        await db.delete(star)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the star.",
+        )
