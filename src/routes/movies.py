@@ -2836,3 +2836,67 @@ async def update_star(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred when updating the star.",
         )
+
+
+@router.delete(
+    "/stars/{star_id}/",
+    summary="Delete a Star",
+    description="Delete the specified star if moderator or admin.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        403: {
+            "description": "Forbidden - Only moderator or admin can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You must be a moderator or admin to do this."
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Star with the given ID was not found.",
+            "content": {"application/json": {"example": {"detail": "Star not found."}}},
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during star deletion.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when deleting the star."}
+                }
+            },
+        },
+    },
+)
+async def delete_star(
+    star_id: int,
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Star deletion endpoint.
+
+    Allows moderators and admin users to delete the specified star.
+
+    Args:
+        star_id (int): The ID of the star to delete.
+        current_user (User): Current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 403 if the user is not a moderator or admin.
+            - 404 if the given star was not found.
+            - 500 if an error occurred during star deletion.
+    """
+    star = await get_star_by_id_or_raise(star_id, db)
+
+    try:
+        await db.delete(star)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when deleting the star.",
+        )
