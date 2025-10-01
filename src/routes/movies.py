@@ -626,7 +626,6 @@ async def create_movie(
 async def get_movies(
     filter_query: Annotated[FilterParams, Query()],
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> MovieListResponseSchema:
     """
     Movie list endpoint.
@@ -641,7 +640,6 @@ async def get_movies(
     Args:
         filter_query: The filters to apply to the query.
         db (AsyncSession): Asynchronous database session.
-        current_user (User): The authenticated user.
 
     Returns:
         MovieListResponseSchema: Movie list response.
@@ -725,7 +723,6 @@ async def get_favorite_movies(
 )
 async def get_movie_by_id(
     movie_id: int,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MovieDetailSchema:
     """
@@ -735,7 +732,6 @@ async def get_movie_by_id(
 
     Args:
         movie_id (int): ID of the movie to retrieve.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -1445,7 +1441,6 @@ async def get_comments(
     movie_id: int,
     page: int = Query(1, ge=1),
     per_page: int = Query(5, ge=1, le=10),
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentListResponseSchema:
     """
@@ -1458,7 +1453,6 @@ async def get_comments(
         movie_id (int): ID of the movie to retrieve comments for.
         page (int): Page number from the query.
         per_page (int): Number of comments per page.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -1911,7 +1905,6 @@ async def reply_to_comment(
 async def get_comment_replies(
     movie_id: int,
     comment_id: int,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentReplyListResponseSchema:
     """
@@ -1922,7 +1915,6 @@ async def get_comment_replies(
     Args:
         movie_id (int): ID of the movie that the comment belongs to.
         comment_id (int): ID of the comment to retrieve replies for.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -2338,16 +2330,13 @@ async def create_genre(
         }
     },
 )
-async def get_genres(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
-) -> GenreListResponseSchema:
+async def get_genres(db: AsyncSession = Depends(get_db)) -> GenreListResponseSchema:
     """
     Genre list endpoint.
 
     Gets a list of all available genres with their movie count.
 
     Args:
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -2386,7 +2375,6 @@ async def get_movies_by_genre(
     genre_id: int,
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> MovieListResponseSchema:
     """
@@ -2398,7 +2386,6 @@ async def get_movies_by_genre(
         genre_id (int): The ID of the genre.
         page (int, optional): Page number of the page.
         per_page (int, optional): Number of items per page.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -2676,7 +2663,6 @@ async def create_star(
 async def get_stars(
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StarListResponseSchema:
     """
@@ -2689,7 +2675,6 @@ async def get_stars(
     Args:
         page (int): Page number from the query.
         per_page (int): Number of items per page from the query.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -2740,7 +2725,6 @@ async def get_stars(
 )
 async def get_star(
     star_id: int,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StarDetailSchema:
     """
@@ -2751,7 +2735,6 @@ async def get_star(
 
     Args:
         star_id (int): ID of the star to retrieve.
-        current_user (User): Current user of the request.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
