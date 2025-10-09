@@ -41,6 +41,7 @@ class Order(Base):
     order_items: Mapped[list["OrderItem"]] = relationship(
         "OrderItem", back_populates="order", cascade="all, delete-orphan"
     )
+    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order")
 
     def __repr__(self) -> str:
         return f"Order(id={self.id}, user_id={self.user_id}, status={self.status})"
@@ -60,6 +61,9 @@ class OrderItem(Base):
 
     order: Mapped["Order"] = relationship("Order", back_populates="order_items")
     movie: Mapped["Movie"] = relationship("Movie", back_populates="order_items")
+    payment_items: Mapped[list["PaymentItem"]] = relationship(
+        "PaymentItem", back_populates="order_item"
+    )
 
     __table_args__ = (
         UniqueConstraint("order_id", "movie_id", name="unique_movie_per_order"),

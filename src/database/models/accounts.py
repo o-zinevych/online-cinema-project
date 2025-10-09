@@ -312,6 +312,7 @@ class User(Base):
     orders: Mapped[list["Order"]] = relationship(
         "Order", back_populates="user", cascade="all, delete-orphan"
     )
+    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="user")
 
     @classmethod
     def create(cls, email: str, raw_password: str, group_id: int) -> "User":
