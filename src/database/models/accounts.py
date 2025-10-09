@@ -282,6 +282,10 @@ class User(Base):
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
 
+    cart: Mapped["Cart"] = relationship(
+        "Cart", back_populates="user", cascade="all, delete-orphan"
+    )
+
     movie_reactions: Mapped[list["UserMovieReaction"]] = relationship(
         "UserMovieReaction", back_populates="user", cascade="all, delete-orphan"
     )
