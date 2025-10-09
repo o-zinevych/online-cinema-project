@@ -309,6 +309,10 @@ class User(Base):
         "MovieCommentReply", secondary=UserReplyLikesModel, back_populates="likes"
     )
 
+    orders: Mapped[list["Order"]] = relationship(
+        "Order", back_populates="user", cascade="all, delete-orphan"
+    )
+
     @classmethod
     def create(cls, email: str, raw_password: str, group_id: int) -> "User":
         """
