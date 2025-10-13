@@ -38,7 +38,11 @@ async def get_or_create_cart_by_user_id(
         HTTPException:
             - 500 if an error occurred during cart creation.
     """
-    stmt = select(Cart).where(Cart.user_id == user_id)
+    stmt = (
+        select(Cart)
+        .options(selectinload(Cart.cart_items))
+        .where(Cart.user_id == user_id)
+    )
     result = await db.execute(stmt)
     cart = result.scalar_one_or_none()
     if not cart:
@@ -113,6 +117,53 @@ async def get_shopping_cart_movie_list(
         return MessageResponseSchema(message="No movies in your cart.")
 
     return [MovieCartItemSchema.model_validate(movie) for movie in movies]
+
+
+@router.delete(
+    "/clear/",
+    summary="Remove All Cart Items",
+    description="Removes all cart items from the user's shopping cart.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        500: {
+            "description": "Internal Server Error - An error occurred during cart items deletion.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when clearing the shopping cart."
+                    },
+                }
+            },
+        },
+    },
+)
+async def clear_all_cart_items(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """
+    Cart items removal endpoint.
+
+    Clears the current user's cart of all the items in it.
+
+    Args:
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 500 if an error occurred during cart items deletion.
+    """
+    cart = await get_or_create_cart_by_user_id(user_id=current_user.id, db=db)
+    try:
+        for cart_item in cart.cart_items:
+            await db.delete(cart_item)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when clearing the shopping cart.",
+        )
 
 
 @router.post(
