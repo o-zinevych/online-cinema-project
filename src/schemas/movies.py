@@ -61,6 +61,15 @@ class CertificationSchema(BaseNameSchema):
     pass
 
 
+class MovieCartItemSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    price: Optional[Decimal] = None
+    genres: List[GenreSchema]
+    year: int
+
+
 class MovieListItemSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
