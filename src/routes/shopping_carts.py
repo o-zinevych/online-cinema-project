@@ -16,7 +16,7 @@ from routes.orders import has_user_order_statuses_for_movie
 from schemas.common import MessageResponseSchema
 from schemas.movies import MovieCartItemSchema
 from schemas.shopping_carts import CartItemDetail
-from security.account_utils import get_current_user
+from security.account_utils import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -129,6 +129,39 @@ async def get_shopping_cart_movie_list(
     """
     movies = await get_movies_in_cart(
         user_id=current_user.id, message="No movies in your cart.", db=db
+    )
+    return movies
+
+
+@router.get(
+    "/{user_id}/",
+    response_model=MessageResponseSchema | list[MovieCartItemSchema],
+    summary="Admin Get Shopping Cart Movie List",
+    description="Retrieves a list of all the movies in the shopping cart by "
+    "user's ID if admin makes the request.",
+    status_code=status.HTTP_200_OK,
+)
+async def get_shopping_cart_movie_list(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema | list[MovieCartItemSchema]:
+    """
+    Shopping cart movie list admin endpoint.
+
+    Retrieves a list of all the movies in the shopping cart of the specified user.
+
+    Args:
+        user_id (int): The ID of the owner of the shopping cart items to retrieve.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A message notifying an admin that the cart is empty.
+        list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
+    """
+    movies = await get_movies_in_cart(
+        user_id=user_id, message="No movies in this cart.", db=db
     )
     return movies
 
