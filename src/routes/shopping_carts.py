@@ -50,6 +50,20 @@ async def get_or_create_cart_by_user_id(
     return cart
 
 
+async def get_cart_item_by_id(
+    cart_item_id: int, db: AsyncSession = Depends(get_db)
+) -> CartItem:
+    """Retrieves the specified cart item or raises 404 if not found."""
+    stmt = select(CartItem).where(CartItem.id == cart_item_id)
+    result = await db.execute(stmt)
+    cart_item = result.scalar_one_or_none()
+    if not cart_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cart item not found."
+        )
+    return cart_item
+
+
 @router.post(
     "/add/{movie_id}/",
     response_model=CartItemDetail,
@@ -156,3 +170,75 @@ async def add_cart_item(
         )
 
     return CartItemDetail.model_validate(new_cart_item)
+
+
+@router.delete(
+    "/remove/{cart_item_id}/",
+    summary="Delete Cart Item",
+    description="Removes the specified cart item from the cart.",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        403: {
+            "description": "Forbidden - Cart Item does not belong to user.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You cannot modify this cart item."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Cart Item with the given id not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Cart item not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during cart item deletion.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred while removing the cart item."
+                    },
+                }
+            },
+        },
+    },
+)
+async def remove_cart_item(
+    cart_item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cart Item deletion endpoint.
+
+    Removes the given cart item from the current user's cart.
+
+    Args:
+        cart_item_id (int): The ID of the cart item to be removed.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Raises:
+        HTTPException:
+            - 403 if the cart item does not belong to the current user.
+            - 404 if cart item with the given ID was not found.
+            - 500 if an error occurred during cart item deletion.
+    """
+    cart_item = await get_cart_item_by_id(cart_item_id, db)
+    cart = await get_or_create_cart_by_user_id(user_id=current_user.id, db=db)
+    if cart_item.cart_id != cart.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot modify this cart item.",
+        )
+
+    try:
+        await db.delete(cart_item)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while removing the cart item.",
+        )
