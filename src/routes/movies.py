@@ -388,6 +388,7 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
             selectinload(Movie.user_reactions),
             selectinload(Movie.user_comments),
             selectinload(Movie.favorited_by_users),
+            selectinload(Movie.cart_items),
         )
         .where(Movie.id == movie_id)
     )
@@ -942,6 +943,17 @@ async def update_movie(
                 "application/json": {"example": {"detail": "Movie not found."}}
             },
         },
+        409: {
+            "description": "Conflict - Movie is in users' shopping carts.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Cannot delete this movie because it exists in "
+                        "users' shopping carts."
+                    }
+                }
+            },
+        },
         500: {
             "description": "Internal Server Error - An error occurred during movie deletion",
             "content": {
@@ -970,6 +982,7 @@ async def delete_movie(
     Raises:
         HTTPException:
             - 404 if the movie with the given ID was not found.
+            - 409 if the movie is in users' shopping carts.
             - 500 if an error occurred during movie deletion.
     """
     movie_stmt = get_movie_by_id_stmt(movie_id)
@@ -977,6 +990,12 @@ async def delete_movie(
     movie_to_delete = movie_result.scalar_one_or_none()
     if not movie_to_delete:
         raise movie_not_found_exception
+
+    if movie_to_delete.cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete this movie because it exists in users' shopping carts.",
+        )
 
     try:
         await db.delete(movie_to_delete)
