@@ -1,9 +1,12 @@
-from fastapi import Depends
+from fastapi import Depends, APIRouter
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models.orders import Order, OrderItem
+
+
+router = APIRouter()
 
 
 async def has_user_order_statuses_for_movie(
