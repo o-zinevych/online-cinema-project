@@ -1,15 +1,20 @@
+from typing import Any, Coroutine, Sequence
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
 from database import get_db
-from database.models import Cart, CartItem
+from database.models import Cart, CartItem, Movie
 from database.models.accounts import User
 from database.models.orders import OrderStatusEnum
 from routes.movies import get_movie_by_id_stmt, movie_not_found_exception
 from routes.orders import has_user_order_statuses_for_movie
+from schemas.common import MessageResponseSchema
+from schemas.movies import MovieCartItemSchema
 from schemas.shopping_carts import CartItemDetail
 from security.account_utils import get_current_user
 
@@ -62,6 +67,52 @@ async def get_cart_item_by_id(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cart item not found."
         )
     return cart_item
+
+
+async def get_movies_in_cart(
+    cart_id: int, db: AsyncSession = Depends(get_db)
+) -> Sequence[Movie]:
+    """Retrieves all the movies in the given cart."""
+    stmt = (
+        select(Movie)
+        .join(CartItem, CartItem.movie_id == Movie.id)
+        .where(CartItem.cart_id == cart_id)
+        .options(selectinload(Movie.genres))
+    )
+    result = await db.execute(stmt)
+    movies = result.scalars().unique().all()
+    return movies
+
+
+@router.get(
+    "/",
+    response_model=MessageResponseSchema | list[MovieCartItemSchema],
+    summary="Get Shopping Cart Movie List",
+    description="Retrieves a list of all the movies in the shopping cart.",
+    status_code=status.HTTP_200_OK,
+)
+async def get_shopping_cart_movie_list(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> MessageResponseSchema | list[MovieCartItemSchema]:
+    """
+    Shopping cart movie list endpoint.
+
+    Retrieves a list of all the movies in the shopping cart of the current user.
+
+    Args:
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A message notifying the user that their cart is empty.
+        list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
+    """
+    cart = await get_or_create_cart_by_user_id(user_id=current_user.id, db=db)
+    movies = await get_movies_in_cart(cart_id=cart.id, db=db)
+    if not movies:
+        return MessageResponseSchema(message="No movies in your cart.")
+
+    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 
 @router.post(
