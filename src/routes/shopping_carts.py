@@ -74,18 +74,34 @@ async def get_cart_item_by_id(
 
 
 async def get_movies_in_cart(
-    cart_id: int, db: AsyncSession = Depends(get_db)
-) -> Sequence[Movie]:
-    """Retrieves all the movies in the given cart."""
+    user_id: int, message: str, db: AsyncSession = Depends(get_db)
+) -> MessageResponseSchema | list[MovieCartItemSchema]:
+    """
+    Retrieves all the movies in the given user's cart.
+
+    Args:
+        user_id (int): The user's ID.
+        message (str): The message to send if the cart is empty.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: A message about the empty cart.
+        list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
+    """
+    cart = await get_or_create_cart_by_user_id(user_id=user_id, db=db)
+
     stmt = (
         select(Movie)
         .join(CartItem, CartItem.movie_id == Movie.id)
-        .where(CartItem.cart_id == cart_id)
+        .where(CartItem.cart_id == cart.id)
         .options(selectinload(Movie.genres))
     )
     result = await db.execute(stmt)
     movies = result.scalars().unique().all()
-    return movies
+    if not movies:
+        return MessageResponseSchema(message=message)
+
+    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 
 @router.get(
@@ -111,12 +127,10 @@ async def get_shopping_cart_movie_list(
         MessageResponseSchema: A message notifying the user that their cart is empty.
         list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
     """
-    cart = await get_or_create_cart_by_user_id(user_id=current_user.id, db=db)
-    movies = await get_movies_in_cart(cart_id=cart.id, db=db)
-    if not movies:
-        return MessageResponseSchema(message="No movies in your cart.")
-
-    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
+    movies = await get_movies_in_cart(
+        user_id=current_user.id, message="No movies in your cart.", db=db
+    )
+    return movies
 
 
 @router.delete(
