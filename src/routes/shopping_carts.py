@@ -9,12 +9,11 @@ from database import get_db
 from database.models import Cart, CartItem, Movie
 from database.models.accounts import User
 from database.models.orders import OrderStatusEnum
-from routes.movies import movie_not_found_exception
 from schemas.common import MessageResponseSchema
 from schemas.movies import MovieCartItemSchema
 from schemas.shopping_carts import CartItemDetail
 from services.account_utils import get_current_user, require_admin
-from services.movie_utils import get_movie_by_id_stmt
+from services.movie_utils import get_movie_by_id_stmt, movie_not_found_exception
 from services.order_utils import has_user_order_statuses_for_movie
 from services.shopping_cart_utils import (
     get_or_create_cart_by_user_id,

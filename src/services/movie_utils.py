@@ -36,6 +36,9 @@ TModel = TypeVar("TModel", Genre, Director, Star)
 no_movies_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="No movies found."
 )
+movie_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
+)
 comment_not_found_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found."
 )

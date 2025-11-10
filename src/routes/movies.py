@@ -64,6 +64,7 @@ from services.movie_utils import (
     get_and_check_comment,
     get_and_check_comment_reply,
     get_star_by_id_or_raise,
+    movie_not_found_exception,
 )
 
 router = APIRouter()
@@ -71,9 +72,6 @@ router = APIRouter()
 base_email_url = "http://127.0.0.1:8000/api/v1/cinema"
 email_sender = get_account_email_sender(get_settings())
 
-movie_not_found_exception = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found."
-)
 no_comments_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="No comments found."
 )
