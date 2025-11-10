@@ -38,7 +38,7 @@ from schemas.accounts import (
     AdminUserUpdateResponseSchema,
 )
 from schemas.common import MessageResponseSchema
-from security.account_utils import get_user_by_email, get_current_user, require_admin
+from services.account_utils import get_user_by_email, get_current_user, require_admin
 from security.token_manager import JWTAuthManager
 
 router = APIRouter()

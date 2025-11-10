@@ -53,7 +53,7 @@ from schemas.movies import (
     StarDetailSchema,
     StarListResponseSchema,
 )
-from security.account_utils import get_current_user, require_moderator_or_admin
+from services.account_utils import get_current_user, require_moderator_or_admin
 
 router = APIRouter()
 

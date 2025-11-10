@@ -1,10 +1,8 @@
-from typing import Any, Coroutine, Sequence
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
 from starlette import status
 
 from database import get_db
@@ -16,7 +14,7 @@ from routes.orders import has_user_order_statuses_for_movie
 from schemas.common import MessageResponseSchema
 from schemas.movies import MovieCartItemSchema
 from schemas.shopping_carts import CartItemDetail
-from security.account_utils import get_current_user, require_admin
+from services.account_utils import get_current_user, require_admin
 
 router = APIRouter()
 
