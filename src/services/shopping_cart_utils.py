@@ -1,3 +1,5 @@
+from typing import Any, Coroutine, Sequence
+
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -65,7 +67,7 @@ async def get_cart_item_by_id(
 
 async def get_movies_in_cart(
     user_id: int, message: str, db: AsyncSession = Depends(get_db)
-) -> MessageResponseSchema | list[MovieCartItemSchema]:
+) -> MessageResponseSchema | Sequence[Movie]:
     """
     Retrieves all the movies in the given user's cart.
 
@@ -91,4 +93,4 @@ async def get_movies_in_cart(
     if not movies:
         return MessageResponseSchema(message=message)
 
-    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
+    return movies

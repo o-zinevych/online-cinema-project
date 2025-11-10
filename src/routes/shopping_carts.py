@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from starlette import status
 
 from database import get_db
-from database.models import Cart, CartItem, Movie
+from database.models import CartItem
 from database.models.accounts import User
 from database.models.orders import OrderStatusEnum
 from schemas.common import MessageResponseSchema
@@ -50,7 +48,7 @@ async def get_shopping_cart_movie_list(
     movies = await get_movies_in_cart(
         user_id=current_user.id, message="No movies in your cart.", db=db
     )
-    return movies
+    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 
 @router.get(
@@ -83,7 +81,7 @@ async def get_shopping_cart_movie_list(
     movies = await get_movies_in_cart(
         user_id=user_id, message="No movies in this cart.", db=db
     )
-    return movies
+    return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 
 @router.delete(
