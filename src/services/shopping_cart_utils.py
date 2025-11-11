@@ -64,6 +64,15 @@ async def get_cart_item_by_id(
     return cart_item
 
 
+async def get_cart_item_movie_ids(
+    cart_id: int, db: AsyncSession = Depends(get_db)
+) -> list[int]:
+    """Lists IDs of all cart item movies."""
+    stmt = select(CartItem.movie_id).where(CartItem.cart_id == cart_id)
+    result = await db.execute(stmt)
+    return [movie_id for movie_id in result.scalars()]
+
+
 async def get_movies_in_cart(
     user_id: int,
     db: AsyncSession = Depends(get_db),
