@@ -1,9 +1,12 @@
+from decimal import Decimal
+from typing import Sequence
+
 from fastapi import Depends
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from database.models import Order, OrderItem
+from database.models import Order, OrderItem, Movie
 
 
 async def has_user_order_statuses_for_movie(
@@ -39,3 +42,9 @@ async def has_user_order_statuses_for_movie(
 
     result = await db.execute(stmt)
     return result.first() is not None
+
+
+def get_total_price_of_ordered_movies(movies: Sequence[Movie]) -> Decimal:
+    """Calculates the total price of the given movies."""
+    total = sum(movie.price for movie in movies if movie.price)
+    return Decimal(total)
