@@ -45,9 +45,9 @@ async def get_shopping_cart_movie_list(
         MessageResponseSchema: A message notifying the user that their cart is empty.
         list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
     """
-    movies = await get_movies_in_cart(
-        user_id=current_user.id, message="No movies in your cart.", db=db
-    )
+    movies = await get_movies_in_cart(user_id=current_user.id, db=db)
+    if not movies:
+        return MessageResponseSchema(message="No movies in your cart.")
     return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 
@@ -78,9 +78,9 @@ async def get_shopping_cart_movie_list(
         MessageResponseSchema: A message notifying an admin that the cart is empty.
         list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
     """
-    movies = await get_movies_in_cart(
-        user_id=user_id, message="No movies in this cart.", db=db
-    )
+    movies = await get_movies_in_cart(user_id=user_id, db=db)
+    if not movies:
+        return MessageResponseSchema(message="No movies in your cart.")
     return [MovieCartItemSchema.model_validate(movie) for movie in movies]
 
 

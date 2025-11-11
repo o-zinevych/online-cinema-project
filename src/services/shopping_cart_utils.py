@@ -1,4 +1,4 @@
-from typing import Any, Coroutine, Sequence
+from typing import Sequence
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
@@ -9,7 +9,6 @@ from starlette import status
 
 from database import get_db
 from database.models import Cart, CartItem, Movie
-from schemas.common import MessageResponseSchema
 from schemas.movies import MovieCartItemSchema
 
 
@@ -66,18 +65,17 @@ async def get_cart_item_by_id(
 
 
 async def get_movies_in_cart(
-    user_id: int, message: str, db: AsyncSession = Depends(get_db)
-) -> MessageResponseSchema | Sequence[Movie]:
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> Sequence[Movie]:
     """
     Retrieves all the movies in the given user's cart.
 
     Args:
         user_id (int): The user's ID.
-        message (str): The message to send if the cart is empty.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
-        MessageResponseSchema: A message about the empty cart.
         list[MovieCartItemSchema]: A list of all the movies in the shopping cart.
     """
     cart = await get_or_create_cart_by_user_id(user_id=user_id, db=db)
@@ -90,7 +88,4 @@ async def get_movies_in_cart(
     )
     result = await db.execute(stmt)
     movies = result.scalars().unique().all()
-    if not movies:
-        return MessageResponseSchema(message=message)
-
     return movies
