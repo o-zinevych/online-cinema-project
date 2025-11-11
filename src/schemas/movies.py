@@ -61,6 +61,10 @@ class CertificationSchema(BaseNameSchema):
     pass
 
 
+class MovieSchema(BaseNameSchema):
+    pass
+
+
 class MovieCartItemSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
