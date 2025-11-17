@@ -43,6 +43,10 @@ class Order(Base):
     )
     payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order")
 
+    @property
+    def movies(self) -> list:
+        return [item.movie for item in self.order_items]
+
     def __repr__(self) -> str:
         return f"Order(id={self.id}, user_id={self.user_id}, status={self.status})"
 
