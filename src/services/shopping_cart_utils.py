@@ -39,8 +39,9 @@ async def get_or_create_cart_by_user_id(
     if not cart:
         try:
             cart = Cart(user_id=user_id)
+            cart.cart_items = []
             db.add(cart)
-            await db.flush()
+            await db.commit()
         except SQLAlchemyError:
             await db.rollback()
             raise HTTPException(
