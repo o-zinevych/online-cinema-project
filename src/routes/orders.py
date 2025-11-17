@@ -10,6 +10,7 @@ from starlette import status
 from database import get_db
 from database.models import User, CartItem, Order
 from database.models.orders import OrderStatusEnum, OrderItem
+from schemas.common import MessageResponseSchema
 from schemas.movies import MovieSchema
 from schemas.orders import (
     OrderCreateResponseSchema,
@@ -22,7 +23,13 @@ from services.common_utils import (
     count_total_items,
     count_total_pages,
 )
-from services.order_utils import get_total_price_of_ordered_movies, no_orders_exception
+from services.order_utils import (
+    get_total_price_of_ordered_movies,
+    no_orders_exception,
+    order_not_found_exception,
+    cancelled_order_exception,
+    paid_order_exception,
+)
 from services.shopping_cart_utils import (
     get_or_create_cart_by_user_id,
     get_cart_item_movie_ids,
@@ -256,3 +263,100 @@ async def get_orders(
         "total_items": total_items,
     }
     return OrderListResponseSchema(**result)
+
+
+@router.post(
+    "/my-orders/{order_id}/cancel/",
+    response_model=MessageResponseSchema,
+    summary="Cancel Order",
+    description="Cancel an existing pending order.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - The given order is already canceled or paid.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "canceled_order": {
+                            "summary": "Order Already Canceled",
+                            "value": {
+                                "detail": "This order has already been canceled."
+                            },
+                        },
+                        "paid_order": {
+                            "summary": "Order Already Paid For",
+                            "value": {"detail": "No movies found."},
+                        },
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - Order with the given ID not found.",
+            "content": {
+                "application/json": {"example": {"detail": "Order not found."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error occurred during order "
+            "cancellation.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "An error occurred when canceling the order."}
+                }
+            },
+        },
+    },
+)
+async def cancel_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponseSchema:
+    """
+    Order cancellation endpoint.
+
+    Allows authenticated users to cancel their pending order.
+    If the order has been paid, prompts the user to submit a refund request.
+    If the order has been canceled already, raises an error.
+
+    Args:
+        order_id: The ID of the order to cancel.
+        current_user: The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message response notifying the user about successful
+        cancellation or the need to submit a refund request.
+
+    Raises:
+        HTTPException:
+            - 400 if the given order has already been canceled or paid for.
+            - 404 if the order to be cancelled was not found or does not belong
+            to the current user.
+            - 500 if an error occurred during order cancellation.
+    """
+    order_stmt = select(Order).where(Order.id == order_id)
+    order_result = await db.execute(order_stmt)
+    order = order_result.scalar_one_or_none()
+    if not order or order.user_id != current_user.id:
+        raise order_not_found_exception
+
+    if order.status == OrderStatusEnum.CANCELED:
+        raise cancelled_order_exception
+
+    if order.status == OrderStatusEnum.PAID:
+        raise paid_order_exception
+
+    try:
+        order.status = OrderStatusEnum.CANCELED
+        await db.commit()
+        return MessageResponseSchema(
+            message=f"Order {order_id} has been canceled successfully."
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred when canceling the order.",
+        )

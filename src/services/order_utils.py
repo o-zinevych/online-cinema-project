@@ -10,8 +10,19 @@ from database import get_db
 from database.models import Order, OrderItem, Movie
 
 
+cancelled_order_exception = HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="This order has already been cancelled.",
+)
+paid_order_exception = HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="To cancel a paid order, please, submit a refund request.",
+)
 no_orders_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="No orders found."
+)
+order_not_found_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
 )
 
 
