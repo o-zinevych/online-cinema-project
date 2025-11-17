@@ -16,4 +16,17 @@ class OrderDetailSchema(BaseModel):
     movies: List[MovieSchema]
     total_amount: Optional[Decimal] = None
     status: OrderStatusEnum
+
+
+class OrderCreateResponseSchema(OrderDetailSchema):
     message: Optional[str] = None
+
+
+class OrderListResponseSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    orders: List[OrderDetailSchema]
+    prev_page: Optional[str]
+    next_page: Optional[str]
+    total_pages: int
+    total_items: int

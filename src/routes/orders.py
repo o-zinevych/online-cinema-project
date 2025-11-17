@@ -1,18 +1,28 @@
 from decimal import Decimal
 
-from fastapi import Depends, APIRouter, HTTPException
-from sqlalchemy import delete, and_
+from fastapi import Depends, APIRouter, HTTPException, Query
+from sqlalchemy import delete, and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette import status
 
 from database import get_db
 from database.models import User, CartItem, Order
 from database.models.orders import OrderStatusEnum, OrderItem
 from schemas.movies import MovieSchema
-from schemas.orders import OrderDetailSchema
+from schemas.orders import (
+    OrderCreateResponseSchema,
+    OrderListResponseSchema,
+    OrderDetailSchema,
+)
 from services.account_utils import get_current_user
-from services.order_utils import get_total_price_of_ordered_movies
+from services.common_utils import (
+    apply_limit_offset_to_item_list,
+    count_total_items,
+    count_total_pages,
+)
+from services.order_utils import get_total_price_of_ordered_movies, no_orders_exception
 from services.shopping_cart_utils import (
     get_or_create_cart_by_user_id,
     get_cart_item_movie_ids,
@@ -24,7 +34,7 @@ router = APIRouter()
 
 @router.post(
     "/place/",
-    response_model=OrderDetailSchema,
+    response_model=OrderCreateResponseSchema,
     summary="Create an Order",
     description="Creates an order for all the shopping cart items.",
     status_code=status.HTTP_201_CREATED,
@@ -68,7 +78,7 @@ router = APIRouter()
 )
 async def create_order(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
-) -> OrderDetailSchema:
+) -> OrderCreateResponseSchema:
     """
     Order creation endpoint.
 
@@ -82,7 +92,7 @@ async def create_order(
         db (AsyncSession): Asynchronous database session.
 
     Returns:
-        OrderDetailSchema: The new order information.
+        OrderCreateResponseSchema: The new order information.
 
     Raises:
         HTTPException:
@@ -161,7 +171,7 @@ async def create_order(
         raise cart_item_exception
 
     movies = [MovieSchema.model_validate(movie) for movie in available_movies]
-    return OrderDetailSchema(
+    return OrderCreateResponseSchema(
         id=new_order.id,
         created_at=new_order.created_at,
         movies=movies,
@@ -169,3 +179,80 @@ async def create_order(
         status=new_order.status,
         message=message,
     )
+
+
+@router.get(
+    "/my-orders/",
+    response_model=OrderListResponseSchema,
+    summary="Get Your Orders",
+    description="Retrieves current user's orders with pagination.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - User has no orders.",
+            "content": {
+                "application/json": {"example": {"detail": "No orders found."}}
+            },
+        },
+    },
+)
+async def get_orders(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5, ge=1, le=15),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OrderListResponseSchema:
+    """
+    Order list endpoint.
+
+    Retrieves current user's orders with pagination.
+
+    Args:
+        page: Page number.
+        per_page: Number of items per page.
+        current_user: The current user of the request.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        OrderListResponseSchema: Order list response with links to previous
+        and next pages if available.
+
+    Raises:
+        HTTPException:
+            - 404 if the current user has no orders.
+    """
+    order_stmt = (
+        select(Order)
+        .where(Order.user_id == current_user.id)
+        .options(selectinload(Order.order_items).selectinload(OrderItem.movie))
+    )
+    total_items = await count_total_items(order_stmt, db)
+    if not total_items:
+        raise no_orders_exception
+
+    order_list = await apply_limit_offset_to_item_list(
+        stmt=order_stmt,
+        page=page,
+        per_page=per_page,
+        error_to_raise=no_orders_exception,
+        list_item_schema=OrderDetailSchema,
+        db=db,
+    )
+
+    total_pages = count_total_pages(total_items, per_page)
+    base_url = "/my-orders/"
+    prev_page = f"{base_url}?page={page - 1}&per_page={per_page}" if page > 1 else None
+    next_page = (
+        f"{base_url}?page={page + 1}&per_page={per_page}"
+        if page < total_pages
+        else None
+    )
+
+    result = {
+        "orders": order_list,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return OrderListResponseSchema(**result)

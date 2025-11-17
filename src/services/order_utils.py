@@ -1,12 +1,18 @@
 from decimal import Decimal
 from typing import Sequence
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
 
 from database import get_db
 from database.models import Order, OrderItem, Movie
+
+
+no_orders_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="No orders found."
+)
 
 
 async def has_user_order_statuses_for_movie(
