@@ -8,7 +8,7 @@ from starlette import status
 
 from database import get_db
 from database.models import Order, OrderItem, Movie
-
+from schemas.orders import AdminOrderFilterParams
 
 cancelled_order_exception = HTTPException(
     status_code=status.HTTP_400_BAD_REQUEST,
@@ -65,3 +65,15 @@ def get_total_price_of_ordered_movies(movies: Sequence[Movie]) -> Decimal:
     """Calculates the total price of the given movies."""
     total = sum(movie.price for movie in movies if movie.price)
     return Decimal(total)
+
+
+def add_filters_to_order_list_page_links(
+    base_url: str, filter_params: AdminOrderFilterParams
+) -> str:
+    """Adds provided filters to orders list page links."""
+    return (
+        f"{base_url}"
+        + (f"&user_id={filter_params.user_id}" if filter_params.user_id else "")
+        + (f"&date={filter_params.date}" if filter_params.date else "")
+        + (f"&status={filter_params.status}" if filter_params.status else "")
+    )

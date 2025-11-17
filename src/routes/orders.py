@@ -1,7 +1,9 @@
+from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import Depends, APIRouter, HTTPException, Query
-from sqlalchemy import delete, and_, select
+from sqlalchemy import delete, and_, select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,8 +18,9 @@ from schemas.orders import (
     OrderCreateResponseSchema,
     OrderListResponseSchema,
     OrderDetailSchema,
+    AdminOrderFilterParams,
 )
-from services.account_utils import get_current_user
+from services.account_utils import get_current_user, require_admin
 from services.common_utils import (
     apply_limit_offset_to_item_list,
     count_total_items,
@@ -29,6 +32,7 @@ from services.order_utils import (
     order_not_found_exception,
     cancelled_order_exception,
     paid_order_exception,
+    add_filters_to_order_list_page_links,
 )
 from services.shopping_cart_utils import (
     get_or_create_cart_by_user_id,
@@ -37,6 +41,112 @@ from services.shopping_cart_utils import (
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/",
+    response_model=OrderListResponseSchema,
+    summary="Admin Order List",
+    description="Get all orders filtered by user, date, and status if admin.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        403: {
+            "description": "Forbidden - Only admin users can perform this action.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You must be an admin to do this."}
+                }
+            },
+        },
+        404: {
+            "description": "Not Found - User has no orders.",
+            "content": {
+                "application/json": {"example": {"detail": "No orders found."}}
+            },
+        },
+    },
+)
+async def get_user_orders(
+    filter_params: Annotated[AdminOrderFilterParams, Query()],
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> OrderListResponseSchema:
+    """
+    Admin order list endpoint.
+
+    Lets admin users view paginated orders and apply user ID, date and status
+    filters to them.
+
+    Args:
+        filter_params (Annotated[AdminOrderFilterParams, Query]): Filters to apply
+        to the list.
+        current_user (User): The current user of the request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        OrderListResponseSchema: The paginated and filtered list of orders.
+
+    Raises:
+        HTTPException:
+            - 403 if the current user is not an admin.
+            - 404 if no orders are found.
+    """
+    order_stmt = select(Order).options(
+        selectinload(Order.order_items).selectinload(OrderItem.movie)
+    )
+
+    if filter_params.user_id:
+        order_stmt = order_stmt.filter(Order.user_id == filter_params.user_id)
+    if filter_params.date:
+        start_of_day = datetime.combine(filter_params.date, datetime.min.time())
+        end_of_day = datetime.combine(filter_params.date, datetime.max.time())
+
+        order_stmt = order_stmt.where(
+            Order.created_at >= start_of_day,
+            Order.created_at < end_of_day,
+        )
+    if filter_params.status:
+        order_stmt = order_stmt.filter(Order.status == filter_params.status)
+
+    total_items = await count_total_items(order_stmt, db)
+    if not total_items:
+        raise no_orders_exception
+
+    order_list = await apply_limit_offset_to_item_list(
+        stmt=order_stmt,
+        page=filter_params.page,
+        per_page=filter_params.per_page,
+        error_to_raise=no_orders_exception,
+        list_item_schema=OrderDetailSchema,
+        db=db,
+    )
+
+    total_pages = count_total_pages(total_items, filter_params.per_page)
+    prev_page = (
+        add_filters_to_order_list_page_links(
+            f"/orders/?page={filter_params.page - 1}&per_page={filter_params.per_page}",
+            filter_params,
+        )
+        if filter_params.page > 1
+        else None
+    )
+    next_page = (
+        add_filters_to_order_list_page_links(
+            f"/orders/?page={filter_params.page + 1}&per_page={filter_params.per_page}",
+            filter_params,
+        )
+        if filter_params.page < total_pages
+        else None
+    )
+
+    result = {
+        "orders": order_list,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return OrderListResponseSchema(**result)
 
 
 @router.post(
