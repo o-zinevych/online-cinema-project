@@ -1,7 +1,7 @@
 from typing import TypeVar, Type, Optional
 
 from fastapi import Depends, HTTPException
-from sqlalchemy import select, Select, desc, and_
+from sqlalchemy import select, Select, desc, and_, exists
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -17,7 +17,10 @@ from database.models import (
     UserMovieFavoritesModel,
     UserMovieComment,
     MovieCommentReply,
+    OrderItem,
+    Order,
 )
+from database.models.orders import OrderStatusEnum
 from schemas.movies import (
     GenreSchema,
     DirectorSchema,
@@ -317,6 +320,21 @@ def get_movie_by_id_stmt(movie_id: int) -> Select:
         )
         .where(Movie.id == movie_id)
     )
+
+
+async def is_movie_purchased(movie_id: int, db: AsyncSession = Depends(get_db)) -> bool:
+    """Checks if the movie with the given ID has been purchased."""
+    order_stmt = select(
+        exists().where(
+            and_(
+                OrderItem.movie_id == movie_id,
+                Order.id == OrderItem.order_id,
+                Order.status == OrderStatusEnum.PAID,
+            )
+        )
+    )
+    order_result = await db.execute(order_stmt)
+    return order_result.scalar()
 
 
 async def get_and_check_comment(
