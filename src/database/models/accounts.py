@@ -282,6 +282,10 @@ class User(Base):
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
 
+    cart: Mapped["Cart"] = relationship(
+        "Cart", back_populates="user", cascade="all, delete-orphan"
+    )
+
     movie_reactions: Mapped[list["UserMovieReaction"]] = relationship(
         "UserMovieReaction", back_populates="user", cascade="all, delete-orphan"
     )
@@ -304,6 +308,11 @@ class User(Base):
     liked_replies: Mapped[list["MovieCommentReply"]] = relationship(
         "MovieCommentReply", secondary=UserReplyLikesModel, back_populates="likes"
     )
+
+    orders: Mapped[list["Order"]] = relationship(
+        "Order", back_populates="user", cascade="all, delete-orphan"
+    )
+    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="user")
 
     @classmethod
     def create(cls, email: str, raw_password: str, group_id: int) -> "User":

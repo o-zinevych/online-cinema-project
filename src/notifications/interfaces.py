@@ -22,6 +22,7 @@ class EmailSenderInterface(ABC):
             email (str): The recipient's email address.
             login_link (str): The login link to include in the email.
         """
+        pass
 
     @abstractmethod
     async def send_password_reset_email(
@@ -35,6 +36,7 @@ class EmailSenderInterface(ABC):
             token (str): The token to include in the password reset completion form.
             password_reset_link (str): The password reset link to include in the email.
         """
+        pass
 
     @abstractmethod
     async def send_password_reset_complete_email(
@@ -47,6 +49,7 @@ class EmailSenderInterface(ABC):
             email (str): The recipient's email address.
             login_link (str): The login link to include in the email.
         """
+        pass
 
     @abstractmethod
     async def send_comment_received_reply_email(
@@ -59,6 +62,7 @@ class EmailSenderInterface(ABC):
             email (str): The recipient's email address.
             replies_link (str): The link to the reply to include in the email.'
         """
+        pass
 
     @abstractmethod
     async def send_comment_received_like_email(
@@ -71,3 +75,4 @@ class EmailSenderInterface(ABC):
             email (str): The recipient's email address.
             comment_link (str): The comment link to include in the email.
         """
+        pass

@@ -2,7 +2,6 @@ from logging.config import fileConfig
 
 from alembic import context
 
-from database.models import accounts, movies
 from database.models.base import Base
 from database.session_sqlite import sync_sqlite_engine, sync_database_url
 

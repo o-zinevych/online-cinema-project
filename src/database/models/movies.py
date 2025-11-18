@@ -179,6 +179,13 @@ class Movie(Base):
         "UserMovieRating", back_populates="movie", cascade="all, delete-orphan"
     )
 
+    cart_items: Mapped[list["CartItem"]] = relationship(
+        "CartItem", back_populates="movie"
+    )
+    order_items: Mapped[list["OrderItem"]] = relationship(
+        "OrderItem", back_populates="movie"
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "name", "year", "time", name="movie_name_year_time_constraint"
