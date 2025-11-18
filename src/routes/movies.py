@@ -65,6 +65,7 @@ from services.movie_utils import (
     get_and_check_comment_reply,
     get_star_by_id_or_raise,
     movie_not_found_exception,
+    is_movie_purchased,
 )
 
 router = APIRouter()
@@ -562,6 +563,14 @@ async def update_movie(
     description="Delete a movie if moderator or admin.",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
+        400: {
+            "description": "Bad Request - Movie is purchased by a user.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Cannot delete purchased movies."}
+                }
+            },
+        },
         404: {
             "description": "Not Found - Movie with the given id not found.",
             "content": {
@@ -606,6 +615,7 @@ async def delete_movie(
 
     Raises:
         HTTPException:
+            - 400 if the movie has been purchased by a user.
             - 404 if the movie with the given ID was not found.
             - 409 if the movie is in users' shopping carts.
             - 500 if an error occurred during movie deletion.
@@ -620,6 +630,12 @@ async def delete_movie(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot delete this movie because it exists in users' shopping carts.",
+        )
+
+    if is_movie_purchased(movie_id, db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete purchased movies.",
         )
 
     try:
