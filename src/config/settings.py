@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -33,4 +34,11 @@ class BaseAppSettings(BaseSettings):
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
     CELERY_RESULT_BACKEND: str = os.getenv(
         "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0"
+    )
+
+    STRIPE_PUBLISHABLE_KEY: str = os.getenv(
+        "STRIPE_PUBLISHABLE_KEY", f"pk_test_{secrets.token_urlsafe(32)}"
+    )
+    STRIPE_SECRET_KEY: str = os.getenv(
+        "STRIPE_SECRET_KEY", f"sk_test_{secrets.token_urlsafe(32)}"
     )
