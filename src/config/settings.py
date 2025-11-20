@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 
 
 class BaseAppSettings(BaseSettings):
+    BASE_URL: str = os.getenv("BASE_URL", "http://127.0.0.1:8000")
     BASE_DIR: Path = Path(__file__).parent.parent
     PATH_TO_DB: str = str(BASE_DIR / "database" / "cinema.db")
 

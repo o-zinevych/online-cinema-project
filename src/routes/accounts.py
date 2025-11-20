@@ -43,8 +43,9 @@ from security.token_manager import JWTAuthManager
 
 router = APIRouter()
 
-base_url = "http://127.0.0.1:8000/api/v1/cinema/accounts"
-email_sender = get_account_email_sender(get_settings())
+settings = get_settings()
+base_url = f"{settings.BASE_URL}/api/v1/cinema/accounts"
+email_sender = get_account_email_sender(settings)
 
 
 @router.post(
