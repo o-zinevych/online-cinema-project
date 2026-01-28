@@ -1,8 +1,11 @@
+from typing import Any, Coroutine
+
 import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
+from stripe import SignatureVerificationError
 
 from config.dependencies import get_settings
 from database import get_db
@@ -154,16 +157,6 @@ async def create_checkout_session(
     status_code=status.HTTP_200_OK,
     name="payment_success",
     responses={
-        403: {
-            "description": "Forbidden - Order is not pending.",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "The order has already been paid for or canceled."
-                    }
-                }
-            },
-        },
         404: {
             "description": "Not Found - Order with the given ID was not found.",
             "content": {
@@ -193,9 +186,6 @@ async def payment_success(
     order = await get_order_by_id(order_id=order_id, db=db)
     if not order or order.user_id != current_user.id:
         raise order_not_found_exception
-
-    if order.status != OrderStatusEnum.PENDING:
-        raise order_not_pending_exception
 
     return MessageResponseSchema(message="Payment completed successfully.")
 
@@ -251,3 +241,91 @@ async def payment_cancel(
     if order.status != OrderStatusEnum.PENDING:
         raise order_not_pending_exception
     return MessageResponseSchema(message="Payment canceled.")
+
+
+@router.post(
+    "/webhook/",
+    response_model=MessageResponseSchema,
+    summary="Stripe Webhook",
+    description="Creates a new payment and updates order status after successful checkout.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {
+            "description": "Bad Request - Stripe signature not valid.",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid signature."}}
+            },
+        },
+        500: {
+            "description": "Internal Server Error - An error during payment creation.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An error occurred when creating a payment record."
+                    }
+                }
+            },
+        },
+    },
+)
+async def stripe_webhook(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> MessageResponseSchema | None:
+    """
+    Stripe Webhook endpoint.
+
+    Checks the  Stripe signature and constructs the event if valid.
+    If the checkout session is completed, creates a payment and its payment items
+    in the database. Updates the Order payment status to PAID.
+    If the charge was unsuccessful, suggests the user try a different payment
+    method.
+
+    Args:
+        request (Request): The incoming HTTP request.
+        db (AsyncSession): Asynchronous database session.
+
+    Returns:
+        MessageResponseSchema: Message about successful payment completion.
+
+    Raises:
+        HTTPException:
+            - 400 if the Stripe signature is invalid.
+            - 500 if an error occurred when creating a payment or payment item.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    webhook_secret = settings.STRIPE_WEBHOOK_SECRET
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except (ValueError, SignatureVerificationError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature."
+        )
+
+    if event["type"] == "checkout.session.completed":
+        try:
+            session = event["data"]["object"]
+            order_id = session["metadata"].get("order_id")
+            order = await get_order_by_id(order_id=order_id, db=db)
+            await create_payment_and_payment_items(
+                user_id=session["metadata"].get("user_id"),
+                order_id=order_id,
+                amount=order.total_amount,
+                order_items=order.order_items,
+                db=db,
+            )
+            order.status = OrderStatusEnum.PAID
+            await db.commit()
+            return MessageResponseSchema(message="Payment completed successfully.")
+        except SQLAlchemyError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An error occurred when creating a payment record.",
+            )
+
+    if event["type"] == "charge.failed":
+        return MessageResponseSchema(
+            message="Payment failed. Try a different payment method."
+        )
