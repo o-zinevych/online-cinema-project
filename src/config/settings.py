@@ -42,3 +42,6 @@ class BaseAppSettings(BaseSettings):
     STRIPE_SECRET_KEY: str = os.getenv(
         "STRIPE_SECRET_KEY", f"sk_test_{secrets.token_urlsafe(32)}"
     )
+    STRIPE_WEBHOOK_SECRET: str = os.getenv(
+        "STRIPE_WEBHOOK_SECRET", f"whsec_{secrets.token_urlsafe(32)}"
+    )
