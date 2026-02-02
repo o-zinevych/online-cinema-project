@@ -1,9 +1,16 @@
 from decimal import Decimal
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
 
 from database.models import Payment, OrderItem
 from database.models.payments import PaymentStatusEnum, PaymentItem
+
+
+no_payments_exception = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="No payments found."
+)
 
 
 async def create_payment_and_payment_items(
