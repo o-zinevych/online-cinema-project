@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 
 import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks, Query
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
