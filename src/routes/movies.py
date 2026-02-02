@@ -9,6 +9,7 @@ from starlette import status
 
 from config.dependencies import get_account_email_sender, get_settings
 from database import get_db
+from database.models import OrderItem, Order
 from database.models.accounts import (
     User,
     UserMovieReaction,
@@ -18,6 +19,7 @@ from database.models.accounts import (
     MovieCommentReply,
 )
 from database.models.movies import Movie, Genre, Director, Star
+from database.models.orders import OrderStatusEnum
 from schemas.common import MessageResponseSchema
 from schemas.movies import (
     MovieListResponseSchema,
@@ -48,6 +50,8 @@ from schemas.movies import (
     GenreDetailSchema,
     StarDetailSchema,
     StarListResponseSchema,
+    PurchasedMovieListResponseSchema,
+    MovieListItemSchema,
 )
 from services.account_utils import get_current_user, require_moderator_or_admin
 from services.common_utils import (
@@ -66,6 +70,7 @@ from services.movie_utils import (
     get_star_by_id_or_raise,
     movie_not_found_exception,
     is_movie_purchased,
+    no_movies_exception,
 )
 
 router = APIRouter()
@@ -331,6 +336,84 @@ async def get_favorite_movies(
         user_id=current_user.id,
     )
     return FavoriteMovieListResponseSchema(**result)
+
+
+@router.get(
+    "/movies/purchased/",
+    response_model=PurchasedMovieListResponseSchema,
+    summary="Purchased Movies List",
+    description="Get a paginated list of purchased movies.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not found - No movies found.",
+            "content": {
+                "application/json": {"example": {"detail": "No movies found."}}
+            },
+        },
+    },
+)
+async def get_purchased_movies(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5, ge=1, le=15),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PurchasedMovieListResponseSchema:
+    """
+    Purchased movie list endpoint.
+
+    Retrieves the list of purchased movies with pagination where applicable.
+
+    Args:
+        page: Page number.
+        per_page: Number of items per page.
+        db (AsyncSession): Asynchronous database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        PurchasedMovieListResponseSchema: Purchased movie list response.
+
+    Raises:
+        HTTPException:
+            - 404 if no purchased movies are found.
+    """
+    movie_stmt = (
+        select(Movie)
+        .join(OrderItem)
+        .join(Order)
+        .where(Order.user_id == current_user.id, Order.status == OrderStatusEnum.PAID)
+        .distinct()
+    )
+    total_items = await count_total_items(movie_stmt, db)
+    if not total_items:
+        raise no_movies_exception
+
+    movie_list = await apply_limit_offset_to_item_list(
+        stmt=movie_stmt,
+        page=page,
+        per_page=per_page,
+        error_to_raise=no_movies_exception,
+        list_item_schema=MovieListItemSchema,
+        db=db,
+    )
+
+    total_pages = count_total_pages(total_items, per_page)
+    base_url = "/purchased/"
+    prev_page = f"{base_url}?page={page - 1}&per_page={per_page}" if page > 1 else None
+    next_page = (
+        f"{base_url}?page={page + 1}&per_page={per_page}"
+        if page < total_pages
+        else None
+    )
+
+    result = {
+        "movies": movie_list,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return PurchasedMovieListResponseSchema(**result)
 
 
 @router.get(
