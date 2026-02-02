@@ -1,13 +1,11 @@
-from typing import Any, Coroutine
-
 import stripe
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from stripe import SignatureVerificationError
 
-from config.dependencies import get_settings
+from config.dependencies import get_settings, get_account_email_sender
 from database import get_db
 from database.models import User
 from database.models.orders import OrderStatusEnum
@@ -25,6 +23,8 @@ router = APIRouter()
 
 settings = get_settings()
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+email_sender = get_account_email_sender(settings)
 
 
 @router.post(
@@ -269,19 +269,24 @@ async def payment_cancel(
     },
 )
 async def stripe_webhook(
-    request: Request, db: AsyncSession = Depends(get_db)
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> MessageResponseSchema | None:
     """
     Stripe Webhook endpoint.
 
     Checks the  Stripe signature and constructs the event if valid.
     If the checkout session is completed, creates a payment and its payment items
-    in the database. Updates the Order payment status to PAID.
+    in the database. Updates the Order payment status to PAID and sends a
+    corresponding email notification.
     If the charge was unsuccessful, suggests the user try a different payment
     method.
 
     Args:
         request (Request): The incoming HTTP request.
+        background_tasks (BackgroundTasks): Background tasks to schedule the
+        email notification about payment success to be sent.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
@@ -317,6 +322,12 @@ async def stripe_webhook(
             )
             order.status = OrderStatusEnum.PAID
             await db.commit()
+
+            user_email = session["metadata"].get("user_email")
+            background_tasks.add_task(
+                email_sender.send_payment_complete_email, user_email, order_id
+            )
+
             return MessageResponseSchema(message="Payment completed successfully.")
         except SQLAlchemyError:
             await db.rollback()
