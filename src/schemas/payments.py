@@ -21,6 +21,18 @@ class PaymentDetailSchema(BaseModel):
     status: PaymentStatusEnum
 
 
+class AdminPaymentDetailSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    order_id: int
+    created_at: datetime
+    status: PaymentStatusEnum
+    amount: Decimal
+    external_payment_id: Optional[str] = None
+
+
 class PaymentListResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,3 +41,7 @@ class PaymentListResponseSchema(BaseModel):
     next_page: Optional[str]
     total_pages: int
     total_items: int
+
+
+class AdminPaymentListResponseSchema(PaymentListResponseSchema):
+    payments: List[AdminPaymentDetailSchema]
