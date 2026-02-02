@@ -370,7 +370,7 @@ async def stripe_webhook(
         },
     },
 )
-async def get_orders(
+async def get_payments(
     page: int = Query(1, ge=1),
     per_page: int = Query(5, ge=1, le=15),
     current_user: User = Depends(get_current_user),
