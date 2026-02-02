@@ -1,6 +1,8 @@
+from datetime import date, datetime, time
+
 import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks, Query
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -10,13 +12,16 @@ from config.dependencies import get_settings, get_account_email_sender
 from database import get_db
 from database.models import User, Payment
 from database.models.orders import OrderStatusEnum
+from database.models.payments import PaymentStatusEnum
 from schemas.common import MessageResponseSchema
 from schemas.payments import (
     PaymentCheckoutResponseSchema,
     PaymentListResponseSchema,
     PaymentDetailSchema,
+    AdminPaymentListResponseSchema,
+    AdminPaymentDetailSchema,
 )
-from services.account_utils import get_current_user
+from services.account_utils import get_current_user, require_moderator_or_admin
 from services.common_utils import (
     count_total_items,
     apply_limit_offset_to_item_list,
@@ -426,3 +431,95 @@ async def get_payments(
         "total_items": total_items,
     }
     return PaymentListResponseSchema(**result)
+
+
+@router.get(
+    "/",
+    response_model=AdminPaymentListResponseSchema,
+    summary="Admin Payment List",
+    description="Retrieves all payments with pagination and optional filters.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - No payments with given parameters found.",
+            "content": {
+                "application/json": {"example": {"detail": "No payments found."}}
+            },
+        },
+    },
+)
+async def get_admin_payments(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5, ge=1, le=15),
+    user_id: int = Query(None, gt=0),
+    date: date = Query(None),
+    status: PaymentStatusEnum = Query(None),
+    current_user: User = Depends(require_moderator_or_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminPaymentListResponseSchema:
+    """
+    Payment list endpoint.
+
+    Retrieves current user's payment history with pagination.
+
+    Args:
+        page (int): Page number.
+        per_page (int): Number of items per page.
+        user_id (int): ID of the user whose payments to retrieve.
+        date (date): Date to retrieve payments from.
+        status (PaymentStatusEnum): Payment status to filter the list by.
+        current_user: The current user of the request.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        AdminPaymentListResponseSchema: Payment list response with links to previous
+        and next pages if available.
+
+    Raises:
+        HTTPException:
+            - 404 if there are no payments to retrieve.
+    """
+    payment_stmt = select(Payment)
+    if user_id:
+        payment_stmt = payment_stmt.where(Payment.user_id == user_id)
+
+    if date:
+        start = datetime.combine(date, time.min)
+        end = datetime.combine(date, time.max)
+        payment_stmt = payment_stmt.where(Payment.created_at.between(start, end))
+
+    if status:
+        payment_stmt = payment_stmt.where(Payment.status == status)
+
+    payment_stmt = payment_stmt.distinct()
+
+    total_items = await count_total_items(payment_stmt, db)
+    if not total_items:
+        raise no_payments_exception
+
+    payment_list = await apply_limit_offset_to_item_list(
+        stmt=payment_stmt,
+        page=page,
+        per_page=per_page,
+        error_to_raise=no_payments_exception,
+        list_item_schema=AdminPaymentDetailSchema,
+        db=db,
+    )
+
+    total_pages = count_total_pages(total_items, per_page)
+    base_url = "/"
+    prev_page = f"{base_url}?page={page - 1}&per_page={per_page}" if page > 1 else None
+    next_page = (
+        f"{base_url}?page={page + 1}&per_page={per_page}"
+        if page < total_pages
+        else None
+    )
+
+    result = {
+        "payments": payment_list,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return AdminPaymentListResponseSchema(**result)
