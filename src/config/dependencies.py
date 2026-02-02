@@ -46,6 +46,7 @@ def get_account_email_sender(
         password_reset_complete_email_template_name=settings.PASSWORD_RESET_COMPLETE_EMAIL_TEMPLATE_NAME,
         comment_received_reply_email_template_name=settings.COMMENT_RECEIVED_REPLY_EMAIL_TEMPLATE_NAME,
         comment_received_like_email_template_name=settings.COMMENT_RECEIVED_LIKE_EMAIL_TEMPLATE_NAME,
+        payment_complete_email_template_name=settings.PAYMENT_COMPLETE_EMAIL_TEMPLATE_NAME,
     )
 
 

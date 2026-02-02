@@ -76,3 +76,13 @@ class EmailSenderInterface(ABC):
             comment_link (str): The comment link to include in the email.
         """
         pass
+
+    @abstractmethod
+    async def send_payment_complete_email(self, email: str, order_id: int) -> None:
+        """
+        Send an email notification about successful payment completion asynchronously.
+
+        Args:
+            email (str): The recipient's email address.
+            order_id (int): The order ID to include in the email.
+        """

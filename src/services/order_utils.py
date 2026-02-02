@@ -4,6 +4,7 @@ from typing import Sequence
 from fastapi import Depends, HTTPException
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette import status
 
 from database import get_db
@@ -23,6 +24,10 @@ no_orders_exception = HTTPException(
 )
 order_not_found_exception = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Order not found."
+)
+order_not_pending_exception = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="The order has already been paid for or canceled.",
 )
 
 
@@ -59,6 +64,18 @@ async def has_user_order_statuses_for_movie(
 
     result = await db.execute(stmt)
     return result.first() is not None
+
+
+async def get_order_by_id(order_id: int, db: AsyncSession = Depends(get_db)) -> Order:
+    """Retrieves an order by the specified ID."""
+    stmt = (
+        select(Order)
+        .options(selectinload(Order.order_items))
+        .where(Order.id == order_id)
+    )
+    result = await db.execute(stmt)
+    order = result.scalar_one_or_none()
+    return order
 
 
 def get_total_price_of_ordered_movies(movies: Sequence[Movie]) -> Decimal:

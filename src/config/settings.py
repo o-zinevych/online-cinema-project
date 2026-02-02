@@ -1,10 +1,12 @@
 import os
+import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
 
 class BaseAppSettings(BaseSettings):
+    BASE_URL: str = os.getenv("BASE_URL", "http://127.0.0.1:8000")
     BASE_DIR: Path = Path(__file__).parent.parent
     PATH_TO_DB: str = str(BASE_DIR / "database" / "cinema.db")
 
@@ -22,6 +24,7 @@ class BaseAppSettings(BaseSettings):
     PASSWORD_RESET_COMPLETE_EMAIL_TEMPLATE_NAME: str = "password_reset_complete.html"
     COMMENT_RECEIVED_REPLY_EMAIL_TEMPLATE_NAME: str = "comment_received_reply.html"
     COMMENT_RECEIVED_LIKE_EMAIL_TEMPLATE_NAME: str = "comment_received_like.html"
+    PAYMENT_COMPLETE_EMAIL_TEMPLATE_NAME: str = "payment_complete.html"
 
     LOGIN_TIME_DAYS: int = 7
 
@@ -32,4 +35,14 @@ class BaseAppSettings(BaseSettings):
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
     CELERY_RESULT_BACKEND: str = os.getenv(
         "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0"
+    )
+
+    STRIPE_PUBLISHABLE_KEY: str = os.getenv(
+        "STRIPE_PUBLISHABLE_KEY", f"pk_test_{secrets.token_urlsafe(32)}"
+    )
+    STRIPE_SECRET_KEY: str = os.getenv(
+        "STRIPE_SECRET_KEY", f"sk_test_{secrets.token_urlsafe(32)}"
+    )
+    STRIPE_WEBHOOK_SECRET: str = os.getenv(
+        "STRIPE_WEBHOOK_SECRET", f"whsec_{secrets.token_urlsafe(32)}"
     )

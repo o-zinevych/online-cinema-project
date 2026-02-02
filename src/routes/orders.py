@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import Depends, APIRouter, HTTPException, Query
-from sqlalchemy import delete, and_, select, func
+from sqlalchemy import delete, and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
