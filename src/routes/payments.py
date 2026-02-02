@@ -1,5 +1,6 @@
 import stripe
-from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks, Query
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -7,17 +8,29 @@ from stripe import SignatureVerificationError
 
 from config.dependencies import get_settings, get_account_email_sender
 from database import get_db
-from database.models import User
+from database.models import User, Payment
 from database.models.orders import OrderStatusEnum
 from schemas.common import MessageResponseSchema
-from schemas.payments import PaymentCheckoutResponseSchema
+from schemas.payments import (
+    PaymentCheckoutResponseSchema,
+    PaymentListResponseSchema,
+    PaymentDetailSchema,
+)
 from services.account_utils import get_current_user
+from services.common_utils import (
+    count_total_items,
+    apply_limit_offset_to_item_list,
+    count_total_pages,
+)
 from services.order_utils import (
     get_order_by_id,
     order_not_found_exception,
     order_not_pending_exception,
 )
-from services.payment_utils import create_payment_and_payment_items
+from services.payment_utils import (
+    create_payment_and_payment_items,
+    no_payments_exception,
+)
 
 router = APIRouter()
 
@@ -340,3 +353,76 @@ async def stripe_webhook(
         return MessageResponseSchema(
             message="Payment failed. Try a different payment method."
         )
+
+
+@router.get(
+    "/my-payments/",
+    response_model=PaymentListResponseSchema,
+    summary="Get Your Payments",
+    description="Retrieves current user's payment history with pagination.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {
+            "description": "Not Found - User has no payments.",
+            "content": {
+                "application/json": {"example": {"detail": "No payments found."}}
+            },
+        },
+    },
+)
+async def get_orders(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5, ge=1, le=15),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PaymentListResponseSchema:
+    """
+    Payment list endpoint.
+
+    Retrieves current user's payment history with pagination.
+
+    Args:
+        page: Page number.
+        per_page: Number of items per page.
+        current_user: The current user of the request.
+        db (AsyncSession): Async database session.
+
+    Returns:
+        PaymentListResponseSchema: Payment list response with links to previous
+        and next pages if available.
+
+    Raises:
+        HTTPException:
+            - 404 if the current user has no payments.
+    """
+    payment_stmt = select(Payment).where(Payment.user_id == current_user.id)
+    total_items = await count_total_items(payment_stmt, db)
+    if not total_items:
+        raise no_payments_exception
+
+    payment_list = await apply_limit_offset_to_item_list(
+        stmt=payment_stmt,
+        page=page,
+        per_page=per_page,
+        error_to_raise=no_payments_exception,
+        list_item_schema=PaymentDetailSchema,
+        db=db,
+    )
+
+    total_pages = count_total_pages(total_items, per_page)
+    base_url = "/my-payments/"
+    prev_page = f"{base_url}?page={page - 1}&per_page={per_page}" if page > 1 else None
+    next_page = (
+        f"{base_url}?page={page + 1}&per_page={per_page}"
+        if page < total_pages
+        else None
+    )
+
+    result = {
+        "payments": payment_list,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "total_pages": total_pages,
+        "total_items": total_items,
+    }
+    return PaymentListResponseSchema(**result)
